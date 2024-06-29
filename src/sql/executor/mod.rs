@@ -1,22 +1,20 @@
+use super::{engine::Transaction, plan::Node, types::Row};
+use crate::error::Result;
 use mutation::Insert;
 use query::Scan;
 use schema::CreateTable;
-
-use crate::error::Result;
-
-use super::{plan::Node, types::Row};
 
 mod mutation;
 mod query;
 mod schema;
 
 // 执行器定义
-pub trait Executor {
-    fn execute(&self) -> Result<ResultSet>;
+pub trait Executor<T: Transaction> {
+    fn execute(&self, txn: &mut T) -> Result<ResultSet>;
 }
 
-impl dyn Executor {
-    pub fn build(node: Node) -> Box<dyn Executor> {
+impl<T: Transaction> dyn Executor<T> {
+    pub fn build(node: Node) -> Box<dyn Executor<T>> {
         match node {
             Node::CreateTable { schema } => CreateTable::new(schema),
             Node::Insert {
