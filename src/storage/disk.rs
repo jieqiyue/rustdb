@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{btree_map, BTreeMap},
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::PathBuf,
@@ -65,7 +65,7 @@ impl DiskEngine {
 }
 
 impl super::engine::Engine for DiskEngine {
-    type EngineIterator<'a> = DiskEngineIterator;
+    type EngineIterator<'a> = DiskEngineIterator<'a>;
 
     fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         // 先写日志
@@ -97,25 +97,39 @@ impl super::engine::Engine for DiskEngine {
     }
 
     fn scan(&mut self, range: impl std::ops::RangeBounds<Vec<u8>>) -> Self::EngineIterator<'_> {
-        todo!()
+        DiskEngineIterator {
+            inner: self.keydir.range(range),
+            log: &mut self.log,
+        }
     }
 }
 
-pub struct DiskEngineIterator {}
+pub struct DiskEngineIterator<'a> {
+    inner: btree_map::Range<'a, Vec<u8>, (u64, u32)>,
+    log: &'a mut Log,
+}
 
-impl super::engine::EngineIterator for DiskEngineIterator {}
+impl<'a> DiskEngineIterator<'a> {
+    fn map(&mut self, item: (&Vec<u8>, &(u64, u32))) -> <Self as Iterator>::Item {
+        let (k, (offset, val_size)) = item;
+        let value = self.log.read_value(*offset, *val_size)?;
+        Ok((k.clone(), value))
+    }
+}
 
-impl Iterator for DiskEngineIterator {
+impl<'a> super::engine::EngineIterator for DiskEngineIterator<'a> {}
+
+impl<'a> Iterator for DiskEngineIterator<'a> {
     type Item = Result<(Vec<u8>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        self.inner.next().map(|item| self.map(item))
     }
 }
 
-impl DoubleEndedIterator for DiskEngineIterator {
+impl<'a> DoubleEndedIterator for DiskEngineIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        todo!()
+        self.inner.next_back().map(|item| self.map(item))
     }
 }
 
@@ -228,8 +242,58 @@ impl Log {
     }
 }
 
-#[test]
-fn test_disk_engine_start() -> Result<()> {
-    let eng = DiskEngine::new_compact(PathBuf::from("/tmp/sqldb-log"))?;
-    Ok(())
+#[cfg(test)]
+mod tets {
+    use crate::{
+        error::Result,
+        storage::{disk::DiskEngine, engine::Engine},
+    };
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_disk_engine_compact() -> Result<()> {
+        let mut eng = DiskEngine::new(PathBuf::from("/tmp/sqldb/sqldb-log"))?;
+        // 写一些数据
+        eng.set(b"key1".to_vec(), b"value".to_vec())?;
+        eng.set(b"key2".to_vec(), b"value".to_vec())?;
+        eng.set(b"key3".to_vec(), b"value".to_vec())?;
+        eng.delete(b"key1".to_vec())?;
+        eng.delete(b"key2".to_vec())?;
+
+        // 重写
+        eng.set(b"aa".to_vec(), b"value1".to_vec())?;
+        eng.set(b"aa".to_vec(), b"value2".to_vec())?;
+        eng.set(b"aa".to_vec(), b"value3".to_vec())?;
+        eng.set(b"bb".to_vec(), b"value4".to_vec())?;
+        eng.set(b"bb".to_vec(), b"value5".to_vec())?;
+
+        let iter = eng.scan(..);
+        let v = iter.collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            v,
+            vec![
+                (b"aa".to_vec(), b"value3".to_vec()),
+                (b"bb".to_vec(), b"value5".to_vec()),
+                (b"key3".to_vec(), b"value".to_vec()),
+            ]
+        );
+        drop(eng);
+
+        let mut eng2 = DiskEngine::new_compact(PathBuf::from("/tmp/sqldb/sqldb-log"))?;
+        let iter2 = eng2.scan(..);
+        let v2 = iter2.collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            v2,
+            vec![
+                (b"aa".to_vec(), b"value3".to_vec()),
+                (b"bb".to_vec(), b"value5".to_vec()),
+                (b"key3".to_vec(), b"value".to_vec()),
+            ]
+        );
+        drop(eng2);
+
+        std::fs::remove_dir_all("/tmp/sqldb")?;
+
+        Ok(())
+    }
 }
