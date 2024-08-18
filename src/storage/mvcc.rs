@@ -59,12 +59,12 @@ impl TransactionState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum MvccKey {
     NextVersion,
     TxnAcvtive(Version),
-    TxnWrite(Version, Vec<u8>),
-    Version(Vec<u8>, Version),
+    TxnWrite(Version, #[serde(with = "serde_bytes")] Vec<u8>),
+    Version(#[serde(with = "serde_bytes")] Vec<u8>, Version),
 }
 
 // NextVersion 0
@@ -86,6 +86,7 @@ pub enum MvccKeyPrefix {
     NextVersion,
     TxnAcvtive,
     TxnWrite(Version),
+    Version(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
 impl MvccKeyPrefix {
