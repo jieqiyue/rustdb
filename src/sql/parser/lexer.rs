@@ -203,8 +203,10 @@ impl<'a> Lexer<'a> {
 
     // 如果满足条件，则跳转到下一个字符，并返回该字符
     fn next_if<F: Fn(char) -> bool>(&mut self, predicate: F) -> Option<char> {
-        // 如果predicate返回true的话，则filter会返回一个Some(),然后这个
+        // 如果predicate返回true的话，则filter会返回一个Some(),然后这个问号，会对Some进行解构，如果filter返回的是Some，那么就会是
+        // 结构出一个&char的类型，不然就会返回一个None。
         self.iter.peek().filter(|&c| predicate(*c))?;
+        // 如果符合这个predicate的话，就需要把迭代器往下移动，并且这个next方法返回的是Option.
         self.iter.next()
     }
 
