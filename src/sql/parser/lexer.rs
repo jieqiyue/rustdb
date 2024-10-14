@@ -178,7 +178,10 @@ impl<'a> Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.scan() {
-            Ok(Some(token)) => Some(Ok(token)),
+            Ok(Some(token)) => {
+                println!("next function got a token: {:?}", token);
+                Some(Ok(token))
+            },
             Ok(None) => self
                 .iter
                 .peek()
@@ -195,6 +198,17 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn debug(&self) {
+        let mut iter_clone = self.iter.clone(); // 克隆 iter
+        println!("#######Debugging Lexer iter:");
+
+        // 遍历克隆的迭代器，输出字符，但不影响原始迭代器
+        while let Some(c) = iter_clone.next() {
+            print!("{}", c);
+        }
+        println!("#######Debugging over@@@@@@@@@@@@@@@");
+    }
+    
     // 消除空白字符
     // eg. selct *       from        t;
     fn erase_whitespace(&mut self) {
@@ -229,6 +243,8 @@ impl<'a> Lexer<'a> {
 
     // 扫描拿到下一个 Token
     fn scan(&mut self) -> Result<Option<Token>> {
+        println!("begin scan function");
+      //  self.debug();
         // 消除字符串中的空白字符部分
         self.erase_whitespace();
         // 根据第一个字符判断
@@ -264,6 +280,7 @@ impl<'a> Lexer<'a> {
     fn scan_number(&mut self) -> Option<Token> {
         // 先扫描一部分
         let mut num = self.next_while(|c| c.is_ascii_digit())?;
+
         // 如果中间有小数点，说明是浮点数
         if let Some(sep) = self.next_if(|c| c == '.') {
             num.push(sep);
@@ -281,7 +298,7 @@ impl<'a> Lexer<'a> {
         let mut value = self.next_if(|c| c.is_alphabetic())?.to_string();
         while let Some(c) = self.next_if(|c| c.is_alphanumeric() || c == '_') {
             value.push(c);
-        }
+        } 
 
         Some(Keyword::from_str(&value).map_or(Token::Ident(value.to_lowercase()), Token::Keyword))
     }
@@ -325,6 +342,7 @@ mod tests {
         .peekable()
         .collect::<Result<Vec<_>>>()?;
 
+        println!("解析出的第一个token：{:?}", tokens1);
         assert_eq!(
             tokens1,
             vec![
@@ -364,6 +382,7 @@ mod tests {
         .peekable()
         .collect::<Result<Vec<_>>>()?;
 
+        println!("解析出的第二个token：{:?}", tokens2);
         assert!(tokens2.len() > 0);
 
         Ok(())
