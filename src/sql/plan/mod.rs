@@ -6,6 +6,10 @@ use super::{
     parser::ast::{Expression},
 };
 use planner::Planner;
+use crate::sql::engine::Transaction;
+use crate::sql::executor::{Executor, ResultSet};
+use crate::error::Result;
+
 mod planner;
 // 执行节点
 #[derive(Debug, PartialEq)]
@@ -37,6 +41,12 @@ impl Plan {
     pub fn build(stmt: ast::Statement) -> Self {
         Planner::new().build(stmt)
     }
+    
+    // 将Plan中的节点转化为执行器，然后执行器去执行
+    pub fn execute<T: Transaction>(self, txn:&mut T)->Result<ResultSet>{
+        <dyn Executor<T>>::build(self.0).execute(txn)
+    }
+    
 }
 
 
