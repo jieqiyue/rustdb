@@ -6,7 +6,10 @@ use crate::sql::schema::Table;
 use crate::sql::types::Row;
 
 mod kv;
-// 抽象的 SQL 引擎层定义，目前只有一个 KVEngine
+
+// 抽象的 SQL 引擎层定义，目前只有一个 KVEngine。
+// 以后可以实现不同的Engine，并且不同的Engine可以有不同的事务实现。只要在定义的时候指定Transaction的实现。
+// 所以Engine是和Transaction配套使用的吗？
 pub trait Engine: Clone {
     type Transaction: Transaction;
     
