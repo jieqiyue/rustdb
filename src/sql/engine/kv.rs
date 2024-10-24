@@ -1,20 +1,21 @@
+use serde::{Deserialize, Serialize};
 use crate::sql::engine::{Engine, Session, Transaction};
-use crate::storage;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::sql::schema::Table;
-use crate::sql::types::Row;
+use crate::sql::types::{Row, Value};
+use crate::storage::{self, engine::Engine as StorageEngine};
 
-pub struct KVEngine {
-    pub kv:storage::Mvcc,
+pub struct KVEngine<E: StorageEngine> {
+    pub kv:storage::mvcc::Mvcc<E>,
 }
-impl Clone for KVEngine {
+impl<E: StorageEngine> Clone for KVEngine<E> {
     fn clone(&self) -> Self {
         Self{kv:self.kv.clone()}
     }
 }
 
-impl Engine for KVEngine {
-    type Transaction = KVTransaction;
+impl<E: StorageEngine> Engine for KVEngine<E> {
+    type Transaction = KVTransaction<E>;
 
     fn begin(&self) -> Result<Self::Transaction> {
         Ok(Self::Transaction::new(self.kv.begin()?))
@@ -22,26 +23,26 @@ impl Engine for KVEngine {
 }
 
 // KV Transaction定义，实际上对存储引擎中MvccTransaction的封装
-pub struct KVTransaction {
-    txn:storage::MvccTransaction,
+pub struct KVTransaction<E: StorageEngine> {
+    txn:storage::mvcc::MvccTransaction<E>,
 }
 
-impl KVTransaction {
-    pub fn new(txn:storage::MvccTransaction) -> Self {
+impl<E: StorageEngine> KVTransaction<E> {
+    pub fn new(txn:storage::mvcc::MvccTransaction<E>) -> Self {
         Self{txn} 
     }
 }
 
-impl Transaction for KVTransaction {
+impl<E: StorageEngine> Transaction for KVTransaction<E> {
     fn commit(&self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn rollback(&self) -> Result<()> {
-        todo!()
+        Ok(())    
     }
 
-    fn create_row(&mut self, table: String, row: Row) -> Result<()> {
+    fn create_row(&mut self, table_name: String, row: Row) -> Result<()> {
         todo!()
     }
 
@@ -50,11 +51,33 @@ impl Transaction for KVTransaction {
     }
 
     fn create_table(&mut self, table: Table) -> Result<()> {
-        todo!()
+        // 判断表是否存在
+        if self.get_table(table.name.clone())?.is_some(){
+            return Err(Error::Internal(format!("table {} already exists", table.name)));  
+        }
+        
+        // 判断表的有效性
+        if table.columns.is_empty() {
+            return Err(Error::Internal(format!("table {} has no columns", table.name)));
+        }
+        
+        let key = Key::Table(table.name.clone());
+        let value = bincode::serialize(&table)?;
+        
+        self.txn.set(bincode::serialize(&key)?, value)
     }
 
     fn get_table(&self, table_name: String) -> Result<Option<Table>> {
-        todo!()
+        let key = Key::Table(table_name);
+        Ok(self.txn.get(bincode::serialize(&key)?)?
+            .map(|v|bincode::deserialize(&v))
+            .transpose()?
+        )
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+enum Key{
+    Table(String),
+    Row(String, Value),
+}

@@ -28,7 +28,7 @@ pub enum ResultSet{
 }
 
 pub trait Executor<T:Transaction> {
-    fn execute(&self, txn:&mut T) -> Result<ResultSet>;
+    fn execute(self:Box<Self>, txn:&mut T) -> Result<ResultSet>;
 }
 
 impl<T:Transaction> dyn Executor<T> {

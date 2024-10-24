@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::sql::executor::ResultSet;
 use crate::sql::parser::Parser;
 use crate::sql::plan::Plan;
@@ -30,13 +30,18 @@ pub trait Transaction {
     // 回滚事务
     fn rollback(&self) -> Result<()>;
     // 创建行
-    fn create_row(&mut self, table: String, row: Row) -> Result<()>;
+    fn create_row(&mut self, table_name: String, row: Row) -> Result<()>;
     // 扫描表
     fn scan_table(&self, table_name: String) -> Result<Vec<Row>>;
     // DDL 相关操作
     fn create_table(&mut self, table: Table) -> Result<()>;
     // 获取表信息
     fn get_table(&self, table_name: String) -> Result<Option<Table>>;
+    // 
+    fn must_get_table(&self, table_name: String) -> Result<Table>{
+        self.get_table(table_name.clone())?
+            .ok_or(Error::Internal(format!("table {} not found", table_name)))
+    }
 }
 
 // 客户端session 定义
