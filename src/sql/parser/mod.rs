@@ -230,6 +230,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // next_expect会调用next方法消耗掉这个token
     fn next_expect(&mut self, expected: Token) -> Result<()> {
         let token = self.next()?;
         if token != expected {
