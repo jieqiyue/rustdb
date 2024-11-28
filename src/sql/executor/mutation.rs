@@ -8,9 +8,12 @@ use crate::sql::parser::ast::{Expression, Statement};
 use crate::sql::schema::Table;
 use crate::sql::types::{DataType, Row, Value};
 
+// Insert可以看作是dml语句，所以存放在mutation.rs文件中
+
 pub struct Insert{
     table_name: String,
     columns: Vec<String>,
+    // 最外层的Vec代表了有很多行数据，里面的Vec是每一行数据中不同列的值
     values: Vec<Vec<Expression>>,
 }
 
@@ -83,8 +86,6 @@ fn make_row(table: &Table, columns: &Vec<String>, values: &Row) -> Result<Row> {
 }
 
 impl<T:Transaction> Executor<T> for Insert {
-    
-    
     fn execute(self:Box<Self>, txn: &mut T) -> crate::error::Result<super::ResultSet> {
         let mut count = 0;
         let table = txn.must_get_table(self.table_name.clone())?;
@@ -93,10 +94,11 @@ impl<T:Transaction> Executor<T> for Insert {
             let row = exprs.into_iter().map(|expr|{Value::from_expression(expr)})
                 .collect::<Vec<_>>();
             
-            // 如果SQL语句中没有指定插入的列
+            // 如果SQL语句中没有指定插入的列的名称，那么就需要当这几个列和定义里面的列的前几列进行匹配
             let insert_row = if self.columns.is_empty(){
                 pad_row(&table, &row)?
             }else { 
+                // 如果指定了列，那么就将指定的列和表定义的时候的列顺序对应起来，并且把没有指定列的值，并且没有默认值的列抛出异常
                 make_row(&table, &self.columns, &row)?
             };
             

@@ -7,6 +7,10 @@ use crate::sql::{
 };
 pub struct Planner;
 
+/*
+    Planner
+        Planner作为一个辅助的结构体，作用就是将ast抽象语法树转化为一个执行计划Plan。Plan并不会直接去解析ast。
+ */
 impl Planner {
     pub fn new() -> Self {
         Self{}

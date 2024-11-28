@@ -4,6 +4,7 @@ use crate::storage::engine::Engine;
 use crate::error::Result;
 use crate::sql::types::Value;
 
+// 注意这里的Engine是存储引擎的Engin不是SQL Engine。
 pub struct Mvcc<E:Engine>{
     // 由于Engine并不是线程安全的实现，但是调用的时候可能并发调用，所以这里要用线程安全的Mutex保护。
     engine: Arc<Mutex<E>>
@@ -27,6 +28,8 @@ impl<E:Engine> Mvcc<E> {
     }
 }
 
+// 为什么这里还需要一个MvccTransaction
+// 这里用到的还是这个Engine
 pub struct MvccTransaction<E:Engine>{
     engine: Arc<Mutex<E>>,
 }

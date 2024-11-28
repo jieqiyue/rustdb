@@ -2,7 +2,8 @@ use crate::sql::schema::Table;
 use crate::error::Result;
 use crate::sql::engine::Transaction;
 use super::{Executor, ResultSet};
-// 创建表
+// 创建表 schema相关
+
 pub struct CreateTable {
     schema: Table
 }

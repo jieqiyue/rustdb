@@ -8,6 +8,7 @@ pub struct Table {
     pub columns: Vec<Column>
 }
 
+// 属于schema的Column，和parser阶段的列不同
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,

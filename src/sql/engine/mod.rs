@@ -50,7 +50,7 @@ pub struct Session<E:Engine>{
 }
 
 impl<E:Engine> Session<E> {
-    // 执行客户端 SQL 语句
+    // 执行客户端 SQL 语句，客户端与服务器端是靠这个Session维持的
     // #[warn(clippy::match_single_binding)]
     pub fn execute(&mut self, sql: &str)->Result<ResultSet>{
         match Parser::new(sql).parse()? { 
