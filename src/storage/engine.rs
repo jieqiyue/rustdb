@@ -4,7 +4,7 @@ use crate::error::Result;
 
 // 抽象存储引擎的定义，接入不同的存储引擎，目前支持基于内存和简单磁盘的KV存储
 pub trait Engine {
-    // 自定义的迭代器
+    // 自定义的迭代器，用于在实现scan的时候，会返回这个迭代器
     type EngineIterator<'a>: EngineIterator where Self: 'a;
     // 设置 key/value
     fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()>;
@@ -12,6 +12,7 @@ pub trait Engine {
     fn get(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
     // 删除key对应的数据，如果key不存在则忽略
     fn delete(&mut self, key: Vec<u8>) -> Result<()>;
+    
     fn scan(&mut self, range: impl RangeBounds<Vec<u8>>)-> Self::EngineIterator<'_>;
     
     // 前缀扫描，扫描只带有这个前缀的数据
