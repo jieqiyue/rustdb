@@ -66,6 +66,8 @@ impl DiskEngine {
 impl super::engine::Engine for DiskEngine {
     type EngineIterator<'a> = DiskEngineIterator<'a>;
 
+    // 1. 将数据写入到磁盘文件中
+    // 2. 更新内存索引
     fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         // 先写日志，offset是写入的初始位置，size是这次写入总共耗费多大的磁盘
         let (offset, size) = self.log.write_entry(&key, Some(&value))?;

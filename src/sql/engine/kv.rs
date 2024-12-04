@@ -62,6 +62,9 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
         self.txn.rollback()
     }
 
+    // 1. 插入数据的数据类型校验，非空校验。
+    // 2. 主键冲突校验。
+    // 3. 调用mvcc层接口保存行数据。
     fn create_row(&mut self, table_name: String, row: Row) -> Result<()> {
         let table = self.must_get_table(table_name.clone())?;
         // 校验行的有效性
@@ -84,7 +87,7 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
             }
         }
 
-        // 找到表中的主键作为一行数据的唯一标识
+        // 从传入要插入的那一行数据中找到主键的值
         let pk = table.get_primary_key(&row)?;
         // 查看主键对应的数据是否已经存在了
         let id = Key::Row(table_name.clone(), pk.clone()).encode()?;
@@ -120,18 +123,22 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
         Ok(())
     }
 
+    // 1. 调用mvcc Transaction获取到整个表的数据，然后进行过滤返回
     fn scan_table(
         &self,
         table_name: String,
         filter: Option<(String, Expression)>,
     ) -> Result<Vec<Row>> {
-        let prefix = KeyPrefix::Row(table_name.clone()).encode()?;
-        let table = self.must_get_table(table_name)?;
+        let table = self.must_get_table(table_name.clone())?;
+        // 在SQL引擎这一层在创建一行数据的时候，就是使用的表名+主键来作为唯一的值，所以这里要把所有的行扫出来也是需要传入
+        // 表名作为前缀，就能扫描到所有的行了。
+        let prefix = KeyPrefix::Row(table_name).encode()?;
         let results = self.txn.scan_prefix(prefix)?;
 
         let mut rows = Vec::new();
         for result in results {
-            // 过滤数据，目前只支持简单的表达式，所以这里直接判断值是否相等，而不是大于小
+            // 过滤数据，目前只支持简单的表达式，所以这里直接判断值是否相等，而不是大于小于。
+            // row在这一层进行create_row的时候，传入的value就是Row进行编码过后的，所以这里进行了bincode的解码。
             let row: Row = bincode::deserialize(&result.value)?;
             if let Some((col, expr)) = &filter {
                 let col_index = table.get_col_index(&col)?;
@@ -142,6 +149,7 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
                 rows.push(row);
             }
         }
+        
         Ok(rows)
     }
 
@@ -177,6 +185,7 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
 #[derive(Debug, Serialize, Deserialize)]
 enum Key{
     Table(String),
+    // 元组第一项是表名，第二项是一个主键
     Row(String, Value),
 }
 impl Key {
@@ -184,6 +193,7 @@ impl Key {
         serialize_key(self)
     }
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 enum KeyPrefix {
     Table,
@@ -194,6 +204,7 @@ impl KeyPrefix {
         serialize_key(self)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{error::Result, sql::engine::Engine, storage::memory::MemoryEngine};

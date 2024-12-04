@@ -34,6 +34,8 @@ impl Insert {
 // insert into tbl values(1, 2, 3);
 // a       b       c          d
 // 1       2       3      default 填充
+// 如果在插入的时候，没有额外指定列名的话，就当做是从头开始对齐的。所以要先跳过row里面的那么多个数据。然后从后面的列开始
+// 查看是否有默认值。如果有的话，就填充进去。如果某一列的值既没有默认值，也没有手动指定的话，就要报错。
 fn pad_row(table: &Table, row: &Row) -> Result<Row> {
     let mut results = row.clone();
     
@@ -86,6 +88,9 @@ fn make_row(table: &Table, columns: &Vec<String>, values: &Row) -> Result<Row> {
 }
 
 impl<T:Transaction> Executor<T> for Insert {
+    // 1. 将要插入的表达式的值转化为Value。
+    // 2. 将SQL语句中要插入的列的值都转化为创建表的时候列的顺序。转化为一个Row类型。
+    // 3. 调用事务的create_row方法创建这一列。
     fn execute(self:Box<Self>, txn: &mut T) -> crate::error::Result<super::ResultSet> {
         let mut count = 0;
         let table = txn.must_get_table(self.table_name.clone())?;
@@ -134,6 +139,7 @@ impl<T: Transaction> Update<T> {
 impl<T: Transaction> Executor<T> for Update<T> {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         let mut updated = 0;
+        
         // 执行扫描操作，获取到扫描的结果
         match self.source.execute(txn)? {
             // 这个columns是这个表里面的每一行的列名，然后rows是要更新的列
@@ -147,6 +153,8 @@ impl<T: Transaction> Executor<T> for Update<T> {
                     for (i, col) in columns.iter().enumerate() {
                         // 如果这一列是需要更新的话，那么就去更新这个new_row，这里要遍历columns是为了得到下标，
                         // 进而能够快速的修改new_row里面的值。
+                        // ToDo 这里有个问题，比如说A,B两个事务，A在B之前开启。然后B对某一行进行了更新，然后A再去更新。
+                        // ToDo 
                         if let Some(expr) = self.columns.get(col) {
                             new_row[i] = Value::from_expression(expr.clone());
                         }
@@ -160,6 +168,7 @@ impl<T: Transaction> Executor<T> for Update<T> {
             }
             _ => return Err(Error::Internal("Unexpected result set".into())),
         }
+        
         Ok(ResultSet::Update { count: updated })
     }
 }

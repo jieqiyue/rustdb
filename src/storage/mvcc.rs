@@ -68,7 +68,7 @@ pub enum MvccKey {
     TxnAcvtive(Version),
     // 记录这个 version 写入了哪些 key，用于回滚事务
     TxnWrite(Version, #[serde(with = "serde_bytes")] Vec<u8>),
-    // 真实数据
+    // 真实数据，在mvcc层使用，第一项是对上层传入的数据的拷贝，然后第二项是u64的版本号
     Version(#[serde(with = "serde_bytes")]Vec<u8>, Version),
 }
 
@@ -232,6 +232,7 @@ impl<E: Engine> MvccTransaction<E> {
         enc_prefix.truncate(enc_prefix.len() - 2);
 
         let mut iter = eng.scan_prefix(enc_prefix);
+        
         let mut results = BTreeMap::new();
         while let Some((key, value)) = iter.next().transpose()? {
             match MvccKey::decode(key.clone())? {
@@ -259,6 +260,9 @@ impl<E: Engine> MvccTransaction<E> {
     }
 
     // 更新/删除数据
+    // 1. 检测事务写入冲突
+    // 2. 记录MvccKey::TxnWrite用于rollback事务
+    // 3. 写入真实数据到底层的kv存储引擎中
     fn write_inner(&self, key: Vec<u8>, value: Option<Vec<u8>>) -> Result<()> {
         // 获取存储引擎
         let mut engine = self.engine.lock()?;
@@ -301,7 +305,7 @@ impl<E: Engine> MvccTransaction<E> {
             }
         }
 
-        // 记录这个 version 写入了哪些 key，用于回滚事务
+        // 记录这个 version 写入了哪些 key，用于回滚事务，不用于其它用途。
         engine.set(
             MvccKey::TxnWrite(self.state.version, key.clone()).encode()?,
             vec![],
