@@ -1,27 +1,28 @@
-use crate::sql::engine::Transaction;
-use crate::sql::executor::{Executor, ResultSet};
+use crate::{
+    error::Result,
+    sql::{engine::Transaction, parser::ast::Expression},
+};
 
-// 查询相关的执行器，单独定义在这里
+use super::{Executor, ResultSet};
 
-pub struct Scan{
-    table_name:String
+pub struct Scan {
+    table_name: String,
+    filter: Option<(String, Expression)>,
 }
 
-impl Scan{
-    pub fn new(table_name:String) -> Box<Self>{
-        Box::new(Self{table_name})
+impl Scan {
+    pub fn new(table_name: String, filter: Option<(String, Expression)>) -> Box<Self> {
+        Box::new(Self { table_name, filter })
     }
-    
 }
 
-impl<T:Transaction> Executor<T> for Scan{
-    fn execute(self:Box<Self>, txn: &mut T) -> crate::error::Result<ResultSet> {
+impl<T: Transaction> Executor<T> for Scan {
+    fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         let table = txn.must_get_table(self.table_name.clone())?;
-        let rows = txn.scan_table(self.table_name.clone())?;
-        
+        let rows = txn.scan_table(self.table_name.clone(), self.filter)?;
         Ok(ResultSet::Scan {
-            column:table.columns.into_iter().map(|c|c.name.clone()).collect(),
-            rows
+            columns: table.columns.into_iter().map(|c| c.name.clone()).collect(),
+            rows,
         })
     }
 }

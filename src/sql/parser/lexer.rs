@@ -28,6 +28,8 @@ pub enum Token {
     Minus,
     // 斜杠 /
     Slash,
+    // 等号 =
+    Equal,
 }
 
 impl Display for Token {
@@ -45,6 +47,7 @@ impl Display for Token {
             Token::Plus => "+",
             Token::Minus => "-",
             Token::Slash => "/",
+            Token::Equal => "=",
         })
     }
 }
@@ -74,6 +77,9 @@ pub enum Keyword {
     Null,
     Primary,
     Key,
+    Update,
+    Set,
+    Where,
 }
 
 impl Keyword {
@@ -102,6 +108,9 @@ impl Keyword {
             "NULL" => Keyword::Null,
             "PRIMARY" => Keyword::Primary,
             "KEY" => Keyword::Key,
+            "UPDATE" => Keyword::Update,
+            "SET" => Keyword::Set,
+            "WHERE" => Keyword::Where,
             _ => return None,
         })
     }
@@ -131,6 +140,9 @@ impl Keyword {
             Keyword::Null => "NULL",
             Keyword::Primary => "PRIMARY",
             Keyword::Key => "KEY",
+            Keyword::Update => "UPDATE",
+            Keyword::Set => "SET",
+            Keyword::Where => "WHERE",
         }
     }
 }
@@ -140,41 +152,23 @@ impl Display for Keyword{
         f.write_str(self.to_str())
     }
 }
-// 词法分析 Lexer 定义
-// 目前支持的 SQL 语法
 
-// 1. Create Table
-// -------------------------------------
-// CREATE TABLE table_name (
-//     [ column_name data_type [ column_constraint [...] ] ]
-//     [, ... ]
-//    );
-//
-//    where data_type is:
-//     - BOOLEAN(BOOL): true | false
-//     - FLOAT(DOUBLE)
-//     - INTEGER(INT)
-//     - STRING(TEXT, VARCHAR)
-//
-//    where column_constraint is:
-//    [ NOT NULL | NULL | DEFAULT expr ]
-//
-// 2. Insert Into
-// -------------------------------------
-// INSERT INTO table_name
-// [ ( column_name [, ...] ) ]
-// values ( expr [, ...] );
-// 3. Select * From
-// -------------------------------------
-// SELECT * FROM table_name;
+/***
+    Lexer:
+        负责初始的解析用户传入的SQL语句，会进行简单的语法分析。在这个过程基本上不会校验SQL语句的正确性。但会保证正常的SQL
+        语句中的各个部分能够得到正确的解析，比如说Create table可以被解析成Create和Table这两个关键字，不会认为是一个普通字符串。
+        最终会获取到一个连续的Token提供给下层使用。
+ */
 pub struct Lexer<'a> {
     iter: Peekable<Chars<'a>>,
 }
 
-// 自定义迭代器，返回 Token
+// 自定义迭代器，返回 Token，由于Lexer实现了迭代器的trait，所以可以调用peekable生成一个迭代器。
 impl<'a> Iterator for Lexer<'a> {
+    // 这里定义了next方法的返回值是一个Token，目的就是为了拿到连续的Token。
     type Item = Result<Token>;
 
+    // next方法主要就是将原始SQL语句解析出一个一个的Token。
     fn next(&mut self) -> Option<Self::Item> {
         match self.scan() {
             Ok(Some(token)) => Some(Ok(token)),
@@ -293,6 +287,7 @@ impl<'a> Lexer<'a> {
             '+' => Some(Token::Plus),
             '-' => Some(Token::Minus),
             '/' => Some(Token::Slash),
+            '=' => Some(Token::Equal),
             _ => None,
         })
     }

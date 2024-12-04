@@ -3,10 +3,9 @@ use crate::sql::schema::Column;
 use crate::sql::types::Row;
 use crate::error::Result;
 use crate::sql::engine::Transaction;
-use crate::sql::executor::mutation::Insert;
 use crate::sql::executor::query::Scan;
 use crate::sql::executor::schema::CreateTable;
-
+use mutation::{Insert, Update};
 mod schema;
 mod mutation;
 mod query;
@@ -23,10 +22,15 @@ pub enum ResultSet{
         count:usize,
     },
 
-    Scan{
-        column: Vec<String>,
-        rows:Vec<Row>,
-    }
+    Scan {
+        columns: Vec<String>,
+        rows: Vec<Row>,
+    },
+
+    Update {
+        count: usize,
+    },
+    
 }
 
 // 通用的执行器的定义trait，有不同的执行器来实现这个trait
@@ -38,13 +42,23 @@ pub trait Executor<T:Transaction> {
     fn execute(self:Box<Self>, txn:&mut T) -> Result<ResultSet>;
 }
 
-impl<T:Transaction> dyn Executor<T> {
+impl<T: Transaction + 'static> dyn Executor<T> {
     // 由于Executor是一个trait，所以这里得用Box来包裹。
-    pub fn build(node :Node)->Box<dyn Executor<T>> {
+    // build根据传入的执行节点的类型生成不同的执行器。然后执行器去执行。
+    pub fn build(node: Node) -> Box<dyn Executor<T>> {
         match node {
             Node::CreateTable { schema } => CreateTable::new(schema),
-            Node::Insert { table_name, columns, values } => Insert::new(table_name, columns, values),
-            Node::Scan { table_name } => Scan::new(table_name),
+            Node::Insert {
+                table_name,
+                columns,
+                values,
+            } => Insert::new(table_name, columns, values),
+            Node::Scan { table_name, filter } => Scan::new(table_name, filter),
+            Node::Update {
+                table_name,
+                source,
+                columns,
+            } => Update::new(table_name, Self::build(*source), columns),
         }
     }
 }

@@ -418,6 +418,7 @@ mod tests {
     // 3. scan prefix
     fn scan_prefix(eng: impl Engine) -> Result<()> {
         let mvcc = Mvcc::new(eng);
+        
         let tx = mvcc.begin()?;
         tx.set(b"aabb".to_vec(), b"val1".to_vec())?;
         tx.set(b"abcc".to_vec(), b"val2".to_vec())?;
@@ -429,6 +430,7 @@ mod tests {
 
         let tx1 = mvcc.begin()?;
         let iter1 = tx1.scan_prefix(b"aa".to_vec())?;
+        
         assert_eq!(
             iter1,
             vec![
@@ -656,6 +658,7 @@ mod tests {
     // 7. delete
     fn delete(eng: impl Engine) -> Result<()> {
         let mvcc = Mvcc::new(eng);
+        
         let tx = mvcc.begin()?;
         tx.set(b"key1".to_vec(), b"val1".to_vec())?;
         tx.set(b"key2".to_vec(), b"val2".to_vec())?;

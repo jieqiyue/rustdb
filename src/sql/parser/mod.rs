@@ -1,13 +1,19 @@
-use std::iter::Peekable;
 use crate::error::{Error, Result};
 use lexer::{Keyword, Lexer, Token};
-use ast::Column;
 use crate::sql::parser::ast::Statement;
 use super::types::DataType;
+use std::{collections::BTreeMap, iter::Peekable};
 
+use ast::{Column, Expression};
 pub mod ast;
 mod lexer;
 
+/***
+    Parser
+        parse会调用lexer去获取到连续的Token。并最终输出一个AST抽象语法树。
+        这个阶段会进行SQL语法错误的解析，比如说每一句SQL语句结尾要加上分号。分号之后不能有其他符号等等。
+        或者如果在解析ddl语句的时候，某一列的数据类型标错了，也能检测出来并且报错。
+ */
 pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a>>,
 }
@@ -36,12 +42,14 @@ impl<'a> Parser<'a> {
         Ok(stmt)
     }
 
+    // 根据lexer获取到连续的Token，并根据这个Token的类型，进行更深入的解析，然后得到AST抽象语法树
     fn parse_statement(&mut self) -> Result<ast::Statement> {
-        // 查看第一个 Token 类型
+        // 查看第一个 Token 类型，这里仅仅是查看，并没有消耗掉这个Token。在真正解析的时候，还需要调用next方法消耗掉。
         match self.peek()? {
             Some(Token::Keyword(Keyword::Create)) => self.parse_ddl(),
             Some(Token::Keyword(Keyword::Select)) => self.parse_select(),
             Some(Token::Keyword(Keyword::Insert)) => self.parse_insert(),
+            Some(Token::Keyword(Keyword::Update)) => self.parse_update(),
             Some(t) => Err(Error::Parse(format!("[Parser] Unexpected token {}", t))),
             None => Err(Error::Parse("[Parser] Unexpected end of input".to_string())),
         }
@@ -57,6 +65,7 @@ impl<'a> Parser<'a> {
         }
     }
     
+    // 解析 Select 语句
     fn parse_select(&mut self) -> Result<ast::Statement> {
         self.next_expect(Token::Keyword(Keyword::Select))?;
         self.next_expect(Token::Asterisk)?;
@@ -159,6 +168,7 @@ impl<'a> Parser<'a> {
                     DataType::Boolean
                 }
                 Token::Keyword(Keyword::Float) | Token::Keyword(Keyword::Double) => DataType::Float,
+                // 将stirng，text，varchar都看作是String类型
                 Token::Keyword(Keyword::String)
                 | Token::Keyword(Keyword::Text)
                 | Token::Keyword(Keyword::Varchar) => DataType::String,
@@ -166,9 +176,12 @@ impl<'a> Parser<'a> {
             },
             nullable: None,
             default: None,
+            primary_key: false,
         };
 
         // 解析列的默认值，以及是否可以为空，只有当写了这个Null，Default等关键字的时候，才会进行解析
+        // 这里有可能不是Token::Keyword类型，那就是SQL语句中没有写这些关键字，因为SQL语句是每一行结尾是一个逗号，
+        // 或者是一个右括号代表这个表定义结束。
         while let Some(Token::Keyword(keyword)) = self.next_if_keyword() {
             match keyword {
                 Keyword::Null => column.nullable = Some(true),
@@ -177,13 +190,58 @@ impl<'a> Parser<'a> {
                     column.nullable = Some(false);
                 }
                 Keyword::Default => column.default = Some(self.parse_expression()?),
+                Keyword::Primary => {
+                    self.next_expect(Token::Keyword(Keyword::Key))?;
+                    column.primary_key = true;
+                }
                 k => return Err(Error::Parse(format!("[Parser] Unexpected keyword {}", k))),
             }
         }
 
         Ok(column)
     }
+    // 解析 Update 语句
+    fn parse_update(&mut self) -> Result<ast::Statement> {
+        self.next_expect(Token::Keyword(Keyword::Update))?;
+        // 表名
+        let table_name = self.next_ident()?;
+        self.next_expect(Token::Keyword(Keyword::Set))?;
 
+        let mut columns = BTreeMap::new();
+        loop {
+            let col = self.next_ident()?;
+            self.next_expect(Token::Equal)?;
+            let value = self.parse_expression()?;
+            if columns.contains_key(&col) {
+                return Err(Error::Parse(format!(
+                    "[parser] Duplicate column {} for update",
+                    col
+                )));
+            }
+            columns.insert(col, value);
+            // 如果没有逗号，列解析完成，跳出
+            if self.next_if_token(Token::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(ast::Statement::Update {
+            table_name,
+            columns,
+            where_clause: self.parse_where_clause()?,
+        })
+    }
+
+    fn parse_where_clause(&mut self) -> Result<Option<(String, Expression)>> {
+        if self.next_if_token(Token::Keyword(Keyword::Where)).is_none() {
+            return Ok(None);
+        }
+
+        let col = self.next_ident()?;
+        self.next_expect(Token::Equal)?;
+        let value = self.parse_expression()?;
+        Ok(Some((col, value)))
+    }
     // 解析表达式，目前只有常量这一种表达式
     fn parse_expression(&mut self) -> Result<ast::Expression> {
         Ok(match self.next()? {
@@ -341,6 +399,27 @@ mod tests{
                 table_name: "tbl1".to_string()
             }
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_parser_update() -> Result<()> {
+        let sql = "update tabl set a = 1, b = 2.0 where c = 'a';";
+        let stmt = Parser::new(sql).parse()?;
+        assert_eq!(
+            stmt,
+            ast::Statement::Update {
+                table_name: "tabl".into(),
+                columns: vec![
+                    ("a".into(), ast::Consts::Integer(1).into()),
+                    ("b".into(), ast::Consts::Float(2.0).into()),
+                ]
+                    .into_iter()
+                    .collect(),
+                where_clause: Some(("c".into(), ast::Consts::String("a".into()).into())),
+            }
+        );
+
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use std::{array::TryFromSliceError, fmt::Display, sync::PoisonError};
-
+use std::string::FromUtf8Error;
 use bincode::ErrorKind;
 use serde::{de, ser};
 // 自定义 Result 类型
@@ -47,6 +47,11 @@ impl From<TryFromSliceError> for Error {
     }
 }
 
+impl From<FromUtf8Error> for Error {
+    fn from(value: FromUtf8Error) -> Self {
+        Error::Internal(value.to_string())
+    }
+}
 impl std::error::Error for Error {}
 
 impl ser::Error for Error {

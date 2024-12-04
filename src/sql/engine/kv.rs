@@ -1,9 +1,16 @@
 use serde::{Deserialize, Serialize};
-use crate::sql::engine::{Engine, Session, Transaction};
-use crate::error::{Error, Result};
-use crate::sql::schema::Table;
-use crate::sql::types::{Row, Value};
-use crate::storage::{self, engine::Engine as StorageEngine};
+
+use crate::{
+    error::{Error, Result},
+    sql::{
+        parser::ast::Expression,
+        schema::Table,
+        types::{Row, Value},
+    },
+    storage::{self, engine::Engine as StorageEngine, keycode::serialize_key},
+};
+
+use super::{Engine, Transaction};
 
 // 这里使用KVEngine实现上层定义的Engine，使用KVTransaction实现上层定义的Transaction
 
@@ -48,78 +55,122 @@ impl<E: StorageEngine> KVTransaction<E> {
 
 impl<E: StorageEngine> Transaction for KVTransaction<E> {
     fn commit(&self) -> Result<()> {
-        Ok(())
+        self.txn.commit()
     }
 
     fn rollback(&self) -> Result<()> {
-        Ok(())    
+        self.txn.rollback()
     }
 
     fn create_row(&mut self, table_name: String, row: Row) -> Result<()> {
         let table = self.must_get_table(table_name.clone())?;
-        
-        // 检验SQL语句中插入的值的类型和表定义的时候列的类型是否匹配
-        for (i, col) in table.columns.iter().enumerate(){
+        // 校验行的有效性
+        for (i, col) in table.columns.iter().enumerate() {
             match row[i].datatype() {
-                None if col.nullable =>{},
+                None if col.nullable => {}
                 None => {
                     return Err(Error::Internal(format!(
                         "column {} cannot be null",
                         col.name
                     )))
-                },
-                Some(dt) if dt != col.datatype =>{
+                }
+                Some(dt) if dt != col.datatype => {
                     return Err(Error::Internal(format!(
                         "column {} type mismatch",
                         col.name
                     )))
-                },
+                }
                 _ => {}
             }
         }
-        
-        // 存放数据，以第一列作为唯一标识，表名+第一列作为key，然后这一行作为值
-        let id = Key::Row(table_name.clone(), row[0].clone());
+
+        // 找到表中的主键作为一行数据的唯一标识
+        let pk = table.get_primary_key(&row)?;
+        // 查看主键对应的数据是否已经存在了
+        let id = Key::Row(table_name.clone(), pk.clone()).encode()?;
+        if self.txn.get(id.clone())?.is_some() {
+            return Err(Error::Internal(format!(
+                "Duplicate data for primary key {} in table {}",
+                pk, table_name
+            )));
+        }
+
+        // 存放数据
         let value = bincode::serialize(&row)?;
-        self.txn.set(bincode::serialize(&id)?, value)?;
+        self.txn.set(id, value)?;
+
+        Ok(())
+    }
+    
+    fn update_row(&mut self, table: &Table, id: &Value, row: Row) -> Result<()> {
+        let new_pk = table.get_primary_key(&row)?;
+        // 更新了主键，则删除旧的数据
+        if *id != new_pk {
+            let key = Key::Row(table.name.clone(), id.clone()).encode()?;
+            self.txn.delete(key)?;
+        }
+
+        // 然后直接将新的列设置到存储引擎当中，如果主键没有被修改，那就还是set原来那一列，而对同一个key进行set之后，
+        // 会进行覆盖。所以原来的数据就被更新了。而如果是主键进行了修改的话，那原来的那一列因为是用到了主键作为key的编码的，
+        // 所以当主键被修改了之后，就要先把原来的主键的那一行给删除掉去。不然原来那一行还是存在的。
+        let key = Key::Row(table.name.clone(), new_pk).encode()?;
+        let value = bincode::serialize(&row)?;
+        self.txn.set(key, value)?;
+
         Ok(())
     }
 
-    fn scan_table(&self, table_name: String) -> Result<Vec<Row>> {
-        let prefix = KeyPrefix::Row(table_name.clone());
-        let results = self.txn.scan_prefix(bincode::serialize(&prefix)?)?;
+    fn scan_table(
+        &self,
+        table_name: String,
+        filter: Option<(String, Expression)>,
+    ) -> Result<Vec<Row>> {
+        let prefix = KeyPrefix::Row(table_name.clone()).encode()?;
+        let table = self.must_get_table(table_name)?;
+        let results = self.txn.scan_prefix(prefix)?;
 
         let mut rows = Vec::new();
         for result in results {
+            // 过滤数据，目前只支持简单的表达式，所以这里直接判断值是否相等，而不是大于小
             let row: Row = bincode::deserialize(&result.value)?;
-            rows.push(row);
+            if let Some((col, expr)) = &filter {
+                let col_index = table.get_col_index(&col)?;
+                if Value::from_expression(expr.clone()) == row[col_index] {
+                    rows.push(row);
+                }
+            } else {
+                rows.push(row);
+            }
         }
         Ok(rows)
     }
 
     fn create_table(&mut self, table: Table) -> Result<()> {
-        // 判断表是否存在
-        if self.get_table(table.name.clone())?.is_some(){
-            return Err(Error::Internal(format!("table {} already exists", table.name)));  
+        // 判断表是否已经存在
+        if self.get_table(table.name.clone())?.is_some() {
+            return Err(Error::Internal(format!(
+                "table {} already exists",
+                table.name
+            )));
         }
-        
+
         // 判断表的有效性
-        if table.columns.is_empty() {
-            return Err(Error::Internal(format!("table {} has no columns", table.name)));
-        }
-        
-        let key = Key::Table(table.name.clone());
+        table.validate()?;
+
+        let key = Key::Table(table.name.clone()).encode()?;
         let value = bincode::serialize(&table)?;
-        
-        self.txn.set(bincode::serialize(&key)?, value)
+        self.txn.set(key, value)?;
+
+        Ok(())
     }
 
     fn get_table(&self, table_name: String) -> Result<Option<Table>> {
-        let key = Key::Table(table_name);
-        Ok(self.txn.get(bincode::serialize(&key)?)?
-            .map(|v|bincode::deserialize(&v))
-            .transpose()?
-        )
+        let key = Key::Table(table_name).encode()?;
+        Ok(self
+            .txn
+            .get(key)?
+            .map(|v| bincode::deserialize(&v))
+            .transpose()?)
     }
 }
 
@@ -128,13 +179,21 @@ enum Key{
     Table(String),
     Row(String, Value),
 }
-
+impl Key {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        serialize_key(self)
+    }
+}
 #[derive(Debug, Serialize, Deserialize)]
 enum KeyPrefix {
     Table,
     Row(String),
 }
-
+impl KeyPrefix {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        serialize_key(self)
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::{error::Result, sql::engine::Engine, storage::memory::MemoryEngine};
@@ -146,13 +205,42 @@ mod tests {
         let kvengine = KVEngine::new(MemoryEngine::new());
         let mut s = kvengine.session()?;
 
-        s.execute("create table t1 (a int, b text default 'vv', c integer default 100);")?;
+        s.execute(
+            "create table t1 (a int primary key, b text default 'vv', c integer default 100);",
+        )?;
         s.execute("insert into t1 values(1, 'a', 1);")?;
         s.execute("insert into t1 values(2, 'b');")?;
         s.execute("insert into t1(c, a) values(200, 3);")?;
 
-        let res = s.execute("select * from t1;")?;
-       // println!("{:?}", res);
+        s.execute("select * from t1;")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update() -> Result<()> {
+        let kvengine = KVEngine::new(MemoryEngine::new());
+        let mut s = kvengine.session()?;
+
+        s.execute(
+            "create table t1 (a int primary key, b text default 'vv', c integer default 100);",
+        )?;
+        s.execute("insert into t1 values(1, 'a', 1);")?;
+        s.execute("insert into t1 values(2, 'b', 2);")?;
+        s.execute("insert into t1 values(3, 'c', 3);")?;
+
+        let v = s.execute("update t1 set b = 'aa' where a = 1;")?;
+        let v = s.execute("update t1 set a = 33 where a = 3;")?;
+        println!("{:?}", v);
+
+        match s.execute("select * from t1;")? {
+            crate::sql::executor::ResultSet::Scan { columns, rows } => {
+                for row in rows {
+                    println!("{:?}", row);
+                }
+            }
+            _ => unreachable!(),
+        }
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_long;
 use crate::error::{Error, Result};
 use crate::sql::engine::Transaction;
@@ -107,5 +107,59 @@ impl<T:Transaction> Executor<T> for Insert {
         }
         
         Ok(ResultSet::Insert {count})
+    }
+}
+
+// Update 执行器
+pub struct Update<T: Transaction> {
+    table_name: String,
+    source: Box<dyn Executor<T>>,
+    columns: BTreeMap<String, Expression>,
+}
+
+impl<T: Transaction> Update<T> {
+    pub fn new(
+        table_name: String,
+        source: Box<dyn Executor<T>>,
+        columns: BTreeMap<String, Expression>,
+    ) -> Box<Self> {
+        Box::new(Self {
+            table_name,
+            source,
+            columns,
+        })
+    }
+}
+
+impl<T: Transaction> Executor<T> for Update<T> {
+    fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
+        let mut updated = 0;
+        // 执行扫描操作，获取到扫描的结果
+        match self.source.execute(txn)? {
+            // 这个columns是这个表里面的每一行的列名，然后rows是要更新的列
+            ResultSet::Scan { columns, rows } => {
+                let table = txn.must_get_table(self.table_name)?;
+                // 遍历所有需要更新的行
+                for row in rows {
+                    let mut new_row = row.clone();
+                    let pk = table.get_primary_key(&row)?;
+                    
+                    for (i, col) in columns.iter().enumerate() {
+                        // 如果这一列是需要更新的话，那么就去更新这个new_row，这里要遍历columns是为了得到下标，
+                        // 进而能够快速的修改new_row里面的值。
+                        if let Some(expr) = self.columns.get(col) {
+                            new_row[i] = Value::from_expression(expr.clone());
+                        }
+                    }
+                    // 去更新这一行的数据
+                    // 如果有主键更新，删除原来的数据，新增一条新的数据
+                    // 否则就 table_name + primary key => 更新数据
+                    txn.update_row(&table, &pk, new_row)?;
+                    updated += 1;
+                }
+            }
+            _ => return Err(Error::Internal("Unexpected result set".into())),
+        }
+        Ok(ResultSet::Update { count: updated })
     }
 }

@@ -1,10 +1,11 @@
+use super::{
+    executor::ResultSet,
+    parser::{ast::Expression, Parser},
+    plan::Plan,
+    schema::Table,
+    types::{Row, Value},
+};
 use crate::error::{Error, Result};
-use crate::sql::executor::ResultSet;
-use crate::sql::parser::Parser;
-use crate::sql::plan::Plan;
-use crate::sql::schema::Table;
-use crate::sql::types::Row;
-
 mod kv;
 
 // 抽象的 SQL 引擎层定义，目前只有一个 KVEngine。
@@ -27,17 +28,29 @@ pub trait Engine: Clone {
 pub trait Transaction {
     // 提交事务
     fn commit(&self) -> Result<()>;
+    
     // 回滚事务
     fn rollback(&self) -> Result<()>;
+    
     // 创建行
     fn create_row(&mut self, table_name: String, row: Row) -> Result<()>;
+    
+    // 更新行，row是这行新的值，id是这一行的原来的主键的值
+    fn update_row(&mut self, table: &Table, id: &Value, row: Row) -> Result<()>;
+    
     // 扫描表
-    fn scan_table(&self, table_name: String) -> Result<Vec<Row>>;
+    fn scan_table(
+        &self,
+        table_name: String,
+        filter: Option<(String, Expression)>,
+    ) -> Result<Vec<Row>>;
+    
     // DDL 相关操作
     fn create_table(&mut self, table: Table) -> Result<()>;
+    
     // 获取表信息
     fn get_table(&self, table_name: String) -> Result<Option<Table>>;
-    // 
+    
     fn must_get_table(&self, table_name: String) -> Result<Table>{
         self.get_table(table_name.clone())?
             .ok_or(Error::Internal(format!("table {} not found", table_name)))
@@ -49,7 +62,7 @@ pub struct Session<E:Engine>{
     engine: E,
 }
 
-impl<E:Engine> Session<E> {
+impl<E: Engine + 'static> Session<E> {
     // 执行客户端 SQL 语句，客户端与服务器端是靠这个Session维持的
     // #[warn(clippy::match_single_binding)]
     pub fn execute(&mut self, sql: &str)->Result<ResultSet>{

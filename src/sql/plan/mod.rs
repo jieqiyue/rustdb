@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::sql::parser::ast;
 use crate::sql::parser::ast::Column;
 use crate::sql::schema::Table;
@@ -31,7 +32,15 @@ pub enum Node{
     // 扫描节点
     Scan{
         table_name:String,
-    }
+        filter: Option<(String, Expression)>,
+    },
+    // 更新节点
+    Update {
+        table_name: String,
+        source: Box<Node>,
+        columns: BTreeMap<String, Expression>,
+    },
+    
 }
 
 // 执行计划定义，底层是不同类型的执行节点
@@ -43,8 +52,8 @@ impl Plan {
         Planner::new().build(stmt)
     }
     
-    // 将Plan中的节点转化为执行器，然后执行器去执行
-    pub fn execute<T: Transaction>(self, txn:&mut T)->Result<ResultSet>{
+    // 将Plan中的执行节点转化为执行器，然后执行器去执行
+    pub fn execute<T: Transaction + 'static>(self, txn: &mut T) -> Result<ResultSet> {
         <dyn Executor<T>>::build(self.0).execute(txn)
     }
     
@@ -148,6 +157,7 @@ mod tests {
             p,
             Plan(Node::Scan {
                 table_name: "tbl1".to_string(),
+                filter: None,
             })
         );
 

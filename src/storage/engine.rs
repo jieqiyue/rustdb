@@ -133,9 +133,9 @@ mod tests {
 
     #[test]
     fn test_memory() -> Result<()> {
-        //test_point_opt(MemoryEngine::new())?;
+        test_point_opt(MemoryEngine::new())?;
         //test_scan(MemoryEngine::new())?;
-        test_scan_prefix(MemoryEngine::new())?;
+        //test_scan_prefix(MemoryEngine::new())?;
         Ok(())
     }
 
