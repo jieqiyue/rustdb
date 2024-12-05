@@ -1,7 +1,7 @@
 use super::{engine::Transaction, plan::Node, types::Row};
 use crate::error::Result;
 use mutation::{Delete, Insert, Update};
-use query::{Order, Scan};
+use query::{Order, Scan, Offset, Limit};
 use schema::CreateTable;
 
 mod mutation;
@@ -72,6 +72,10 @@ impl<T: Transaction + 'static> dyn Executor<T> {
                 source, 
                 order_by 
             } => Order::new(Self::build(*source), order_by),
+            
+            Node::Limit { source, limit}  => Limit::new(Self::build(*source), limit),
+
+            Node::Offset { source, offset }  => Offset::new(Self::build(*source), offset),
         }
     }
 }

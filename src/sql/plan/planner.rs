@@ -1,10 +1,14 @@
-use crate::sql::parser::ast;
-use crate::sql::parser::ast::Statement;
-use super::{Node, Plan};
-use crate::sql::{
-    schema::{self, Table},
-    types::Value,
+use crate::{
+    error::{Error, Result},
+    sql::{
+        parser::ast,
+        schema::{self, Table},
+        types::Value,
+    },
 };
+
+use super::{Node, Plan};
+
 pub struct Planner;
 
 /*
@@ -16,12 +20,12 @@ impl Planner {
         Self{}
     }
     
-    pub fn build(&mut self, stmt:ast::Statement)-> Plan{
-        Plan(self.build_statment(stmt))
+    pub fn build(&mut self, stmt:ast::Statement)-> Result<Plan>{
+        Ok(Plan(self.build_statment(stmt)?))
     }
 
-    fn build_statment(&self, stmt: ast::Statement) -> Node {
-        match stmt {
+    fn build_statment(&self, stmt: ast::Statement) -> Result<Node> {
+        Ok(match stmt {
             ast::Statement::CreateTable { name, columns } => Node::CreateTable {
                 schema: Table {
                     name,
@@ -58,6 +62,8 @@ impl Planner {
             ast::Statement::Select {
                 table_name,
                 order_by,
+                limit,
+                offset,
             } => {
                 let mut node = Node::Scan {
                     table_name,
@@ -69,6 +75,32 @@ impl Planner {
                     node = Node::Order {
                         source: Box::new(node),
                         order_by,
+                    }
+                }
+
+                // 由于可能同时存在offset和limit关键字，所以当两者都存在的时候，需要先进行limit，再进行offset，所以
+                // 在这里构建Node的时候，需要先处理limit存在的情况。
+                // 由于offset和limit关键字一般是出现在select语句当中的，所以这里是在ast::Statement::Select中进行处理。
+                // offset
+                if let Some(expr) = offset {
+                    node = Node::Offset {
+                        source: Box::new(node),
+                        offset: match Value::from_expression(expr) {
+                            Value::Integer(i) => i as usize,
+                            _ => return Err(Error::Internal("invalid offset".into())),
+                        },
+                    }
+                }
+                
+                // 由于这种递归的关系，所以到时候处理的时候，会先进行source的处理，就会有一个递归的效果
+                // limit
+                if let Some(expr) = limit {
+                    node = Node::Limit {
+                        source: Box::new(node),
+                        limit: match Value::from_expression(expr) {
+                            Value::Integer(i) => i as usize,
+                            _ => return Err(Error::Internal("invalid limit".into())),
+                        },
                     }
                 }
 
@@ -96,6 +128,6 @@ impl Planner {
                     filter: where_clause,
                 }),
             },
-        }
+        })
     }
 }

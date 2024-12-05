@@ -1,5 +1,4 @@
 use std::{cmp::Ordering, collections::HashMap};
-
 use crate::{
     error::{Error, Result},
     sql::{
@@ -8,6 +7,7 @@ use crate::{
     },
 };
 
+use crate::sql::types::Value;
 use super::{Executor, ResultSet};
 pub struct Scan {
     table_name: String,
@@ -47,7 +47,7 @@ impl<T: Transaction> Executor<T> for Order<T> {
             ResultSet::Scan { columns, mut rows } => {
                 // 找到 order by 的列对应表中的列的位置
                 let mut order_col_index = HashMap::new();
-                
+
                 for (i, (col_name, _)) in self.order_by.iter().enumerate() {
                     match columns.iter().position(|c| *c == *col_name) {
                         Some(pos) => order_col_index.insert(i, pos),
@@ -82,6 +82,52 @@ impl<T: Transaction> Executor<T> for Order<T> {
 
                 Ok(ResultSet::Scan { columns, rows })
             }
+            _ => return Err(Error::Internal("Unexpected result set".into())),
+        }
+    }
+}
+
+pub struct Offset<T: Transaction> {
+    source: Box<dyn Executor<T>>,
+    offset: usize,
+}
+
+impl<T: Transaction> Offset<T> {
+    pub fn new(source: Box<dyn Executor<T>>, offset: usize) -> Box<Self> {
+        Box::new(Self { source, offset })
+    }
+}
+
+impl<T: Transaction> Executor<T> for Offset<T> {
+    fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
+        match self.source.execute(txn)? {
+            ResultSet::Scan { columns, rows } => Ok(ResultSet::Scan {
+                columns,
+                rows: rows.into_iter().skip(self.offset).collect(),
+            }),
+            _ => return Err(Error::Internal("Unexpected result set".into())),
+        }
+    }
+}
+
+pub struct Limit<T: Transaction> {
+    source: Box<dyn Executor<T>>,
+    limit: usize,
+}
+
+impl<T: Transaction> Limit<T> {
+    pub fn new(source: Box<dyn Executor<T>>, limit: usize) -> Box<Self> {
+        Box::new(Self { source, limit })
+    }
+}
+
+impl<T: Transaction> Executor<T> for Limit<T> {
+    fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
+        match self.source.execute(txn)? {
+            ResultSet::Scan { columns, rows } => Ok(ResultSet::Scan {
+                columns,
+                rows: rows.into_iter().take(self.limit).collect(),
+            }),
             _ => return Err(Error::Internal("Unexpected result set".into())),
         }
     }

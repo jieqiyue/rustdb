@@ -34,25 +34,41 @@ pub enum Node{
         table_name:String,
         filter: Option<(String, Expression)>,
     },
+    
+    // 排序节点
+    Order {
+        // 这里的source是一个Scan节点，将数据扫描出来了之后，在进行排序。
+        source: Box<Node>,
+        order_by: Vec<(String, OrderDirection)>,
+    },
+
+    // limit 节点
+    Limit {
+        // 这里的source是一个Scan节点，将数据扫描出来了之后，在进行排序。
+        source: Box<Node>,
+        limit: usize,
+    },
+
+    // offset 节点
+    Offset {
+        // 这里的source是一个Scan节点，将数据扫描出来了之后，在进行排序。
+        source: Box<Node>,
+        offset: usize,
+    },
+    
     // 更新节点
     Update {
         table_name: String,
         source: Box<Node>,
         columns: BTreeMap<String, Expression>,
     },
+    
     // 删除节点
     Delete {
         table_name: String,
         // 对于这种删除和更新节点来说，都需要一个过滤条件来找到所有需要更新的节点，所以这里引入一个Node来递归的调用Scan节点
         // 来得到需要更新的节点
         source: Box<Node>,
-    },
-
-    // 排序节点
-    Order {
-        // 这里的source是一个Scan节点，将数据扫描出来了之后，在进行排序。
-        source: Box<Node>,
-        order_by: Vec<(String, OrderDirection)>,
     },
 }
 
@@ -61,7 +77,7 @@ pub enum Node{
 pub struct Plan(pub Node);
 
 impl Plan {
-    pub fn build(stmt: ast::Statement) -> Self {
+    pub fn build(stmt: ast::Statement) -> Result<Self> {
         Planner::new().build(stmt)
     }
     
@@ -122,7 +138,7 @@ mod tests {
         let p1 = Plan::build(stmt1);
         assert_eq!(
             p1,
-            Plan(Node::Insert {
+            Ok(Plan(Node::Insert {
                 table_name: "tbl1".to_string(),
                 columns: vec![],
                 values: vec![vec![
@@ -132,7 +148,7 @@ mod tests {
                     Expression::Consts(ast::Consts::String("a".to_string())),
                     Expression::Consts(ast::Consts::Boolean(true)),
                 ]],
-            })
+            }))
         );
 
         let sql2 = "insert into tbl2 (c1, c2, c3) values (3, 'a', true),(4, 'b', false);";
@@ -140,7 +156,7 @@ mod tests {
         let p2 = Plan::build(stmt2);
         assert_eq!(
             p2,
-            Plan(Node::Insert {
+            Ok(Plan(Node::Insert {
                 table_name: "tbl2".to_string(),
                 columns: vec!["c1".to_string(), "c2".to_string(), "c3".to_string()],
                 values: vec![
@@ -155,7 +171,7 @@ mod tests {
                         Expression::Consts(ast::Consts::Boolean(false)),
                     ],
                 ],
-            })
+            }))
         );
 
         Ok(())
@@ -168,10 +184,10 @@ mod tests {
         let p = Plan::build(stmt);
         assert_eq!(
             p,
-            Plan(Node::Scan {
+            Ok(Plan(Node::Scan {
                 table_name: "tbl1".to_string(),
                 filter: None,
-            })
+            }))
         );
 
         Ok(())

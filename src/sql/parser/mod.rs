@@ -5,6 +5,8 @@ use super::types::DataType;
 use std::{collections::BTreeMap, iter::Peekable};
 
 use ast::{Column, Expression, OrderDirection};
+use crate::sql::parser::lexer::Keyword::{Limit, Offset};
+
 pub mod ast;
 mod lexer;
 
@@ -76,10 +78,25 @@ impl<'a> Parser<'a> {
         let table_name = self.next_ident()?;
         Ok(ast::Statement::Select {
             table_name,
-            order_by: self.parse_order_clause()?,
+            order_by: self.parse_order_clause()?,   
+            // 如果在select语句最后还有limit和offset关键字
+            limit: {
+               if self.next_if_token(Token::Keyword(Limit)).is_some(){
+                   Some(self.parse_expression()?)
+               }else{
+                   None
+               }
+            },
+            offset:{
+                if self.next_if_token(Token::Keyword(Offset)).is_some(){
+                    Some(self.parse_expression()?)
+                }else{
+                    None
+                }
+            }
         })
     }
-    
+
     fn parse_order_clause(&mut self) -> Result<Vec<(String, OrderDirection)>> {
         let mut orders = Vec::new();
         if self.next_if_token(Token::Keyword(Keyword::Order)).is_none() {
@@ -99,7 +116,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Keyword(Keyword::Desc)) => OrderDirection::Desc,
                 _ => OrderDirection::Asc,
             };
-            
+
             orders.push((col, ord));
 
             if self.next_if_token(Token::Comma).is_none() {
@@ -355,7 +372,7 @@ mod tests{
         error::Result,
         sql::parser::ast::{self, OrderDirection},
     };
-
+    use crate::sql::parser::ast::{Consts, Expression};
     use super::Parser;
     #[test]
     fn test_parser_create_table() -> Result<()> {
@@ -440,13 +457,15 @@ mod tests{
 
     #[test]
     fn test_parser_select() -> Result<()> {
-        let sql = "select * from tbl1;";
+        let sql = "select * from tbl1 limit 19 offset 20;";
         let stmt = Parser::new(sql).parse()?;
         assert_eq!(
             stmt,
             ast::Statement::Select {
                 table_name: "tbl1".to_string(),
                 order_by: vec![],
+                limit: Some(Expression::Consts(Consts::Integer(19))),
+                offset: Some(Expression::Consts(Consts::Integer(20))),
             }
         );
 
@@ -461,6 +480,8 @@ mod tests{
                     ("b".to_string(), OrderDirection::Asc),
                     ("c".to_string(), OrderDirection::Desc),
                 ],
+                limit: None,
+                offset: None,
             }
         );
 
