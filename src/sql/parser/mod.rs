@@ -4,7 +4,7 @@ use crate::sql::parser::ast::Statement;
 use super::types::DataType;
 use std::{collections::BTreeMap, iter::Peekable};
 
-use ast::{Column, Expression};
+use ast::{Column, Expression, OrderDirection};
 pub mod ast;
 mod lexer;
 
@@ -65,7 +65,7 @@ impl<'a> Parser<'a> {
             token => Err(Error::Parse(format!("[Parser] Unexpected token {}", token))),
         }
     }
-    
+
     // 解析 Select 语句
     fn parse_select(&mut self) -> Result<ast::Statement> {
         self.next_expect(Token::Keyword(Keyword::Select))?;
@@ -74,9 +74,41 @@ impl<'a> Parser<'a> {
         
         // 解析表名
         let table_name = self.next_ident()?;
-        Ok(ast::Statement::Select {table_name})
+        Ok(ast::Statement::Select {
+            table_name,
+            order_by: self.parse_order_clause()?,
+        })
     }
+    
+    fn parse_order_clause(&mut self) -> Result<Vec<(String, OrderDirection)>> {
+        let mut orders = Vec::new();
+        if self.next_if_token(Token::Keyword(Keyword::Order)).is_none() {
+            return Ok(orders);
+        }
+        self.next_expect(Token::Keyword(Keyword::By))?;
 
+        loop {
+            let col = self.next_ident()?;
+            let ord = match self.next_if(|t| {
+                matches!(
+                    t,
+                    Token::Keyword(Keyword::Asc) | Token::Keyword(Keyword::Desc)
+                )
+            }) {
+                Some(Token::Keyword(Keyword::Asc)) => OrderDirection::Asc,
+                Some(Token::Keyword(Keyword::Desc)) => OrderDirection::Desc,
+                _ => OrderDirection::Asc,
+            };
+            
+            orders.push((col, ord));
+
+            if self.next_if_token(Token::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(orders)
+    }
     // 解析 Insert 语句
     fn parse_insert(&mut self) -> Result<ast::Statement> {
         self.next_expect(Token::Keyword(Keyword::Insert))?;
@@ -232,7 +264,7 @@ impl<'a> Parser<'a> {
             where_clause: self.parse_where_clause()?,
         })
     }
-    
+
     // 解析 Delete 语句
     fn parse_delete(&mut self) -> Result<ast::Statement> {
         self.next_expect(Token::Keyword(Keyword::Delete))?;
@@ -245,7 +277,7 @@ impl<'a> Parser<'a> {
             where_clause: self.parse_where_clause()?,
         })
     }
-    
+
     fn parse_where_clause(&mut self) -> Result<Option<(String, Expression)>> {
         if self.next_if_token(Token::Keyword(Keyword::Where)).is_none() {
             return Ok(None);
@@ -319,7 +351,10 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests{
-    use crate::{error::Result, sql::parser::ast};
+    use crate::{
+        error::Result,
+        sql::parser::ast::{self, OrderDirection},
+    };
 
     use super::Parser;
     #[test]
@@ -410,11 +445,28 @@ mod tests{
         assert_eq!(
             stmt,
             ast::Statement::Select {
-                table_name: "tbl1".to_string()
+                table_name: "tbl1".to_string(),
+                order_by: vec![],
             }
         );
+
+        let sql = "select * from tbl1 order by a, b asc, c desc;";
+        let stmt = Parser::new(sql).parse()?;
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                table_name: "tbl1".to_string(),
+                order_by: vec![
+                    ("a".to_string(), OrderDirection::Asc),
+                    ("b".to_string(), OrderDirection::Asc),
+                    ("c".to_string(), OrderDirection::Desc),
+                ],
+            }
+        );
+
         Ok(())
     }
+
 
     #[test]
     fn test_parser_update() -> Result<()> {

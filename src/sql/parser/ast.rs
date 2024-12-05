@@ -10,10 +10,13 @@ pub enum Statement {
         columns: Option<Vec<String>>,
         values: Vec<Vec<Expression>>,
     } ,
+    
     // 由于目前仅仅实现的是select * from xxxx表，这种类型的语句，所以这里仅仅存储一下表名就可以了。
     Select { 
-        table_name:String 
+        table_name:String,
+        order_by: Vec<(String, OrderDirection)>,
     },
+    
     Update {
         table_name: String,
         columns: BTreeMap<String, Expression>,
@@ -23,6 +26,12 @@ pub enum Statement {
         table_name: String,
         where_clause: Option<(String, Expression)>,
     },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
 }
 
 #[derive(Debug, PartialEq)]

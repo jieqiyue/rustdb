@@ -55,9 +55,24 @@ impl Planner {
                 columns: columns.unwrap_or_default(),
                 values,
             },
-            ast::Statement::Select { table_name } => Node::Scan {
+            ast::Statement::Select {
                 table_name,
-                filter: None,
+                order_by,
+            } => {
+                let mut node = Node::Scan {
+                    table_name,
+                    filter: None,
+                };
+
+                // order by
+                if !order_by.is_empty() {
+                    node = Node::Order {
+                        source: Box::new(node),
+                        order_by,
+                    }
+                }
+
+                node
             },
             ast::Statement::Update {
                 table_name,

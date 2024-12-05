@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
-use crate::sql::parser::ast;
-use crate::sql::parser::ast::Column;
-use crate::sql::schema::Table;
-use crate::sql::types::Value;
-use super::{
-    parser::ast::{Expression},
-};
+
 use planner::Planner;
-use crate::sql::engine::Transaction;
-use crate::sql::executor::{Executor, ResultSet};
+
 use crate::error::Result;
+
+use super::{
+    engine::Transaction,
+    executor::{Executor, ResultSet},
+    parser::ast::{self, Expression, OrderDirection},
+    schema::Table,
+};
 
 mod planner;
 
@@ -46,6 +46,13 @@ pub enum Node{
         // 对于这种删除和更新节点来说，都需要一个过滤条件来找到所有需要更新的节点，所以这里引入一个Node来递归的调用Scan节点
         // 来得到需要更新的节点
         source: Box<Node>,
+    },
+
+    // 排序节点
+    Order {
+        // 这里的source是一个Scan节点，将数据扫描出来了之后，在进行排序。
+        source: Box<Node>,
+        order_by: Vec<(String, OrderDirection)>,
     },
 }
 

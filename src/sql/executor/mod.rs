@@ -1,16 +1,12 @@
-use crate::sql::plan::Node;
-use crate::sql::schema::Column;
-use crate::sql::types::Row;
+use super::{engine::Transaction, plan::Node, types::Row};
 use crate::error::Result;
-use crate::sql::engine::Transaction;
-use crate::sql::executor::query::Scan;
-use crate::sql::executor::schema::CreateTable;
-use mutation::{Insert, Update};
-use crate::sql::executor::mutation::Delete;
+use mutation::{Delete, Insert, Update};
+use query::{Order, Scan};
+use schema::CreateTable;
 
-mod schema;
 mod mutation;
 mod query;
+mod schema;
 
 // 执行结果集，不同的节点执行结果是不同的
 #[derive(Debug, PartialEq)]
@@ -71,6 +67,11 @@ impl<T: Transaction + 'static> dyn Executor<T> {
                 table_name, 
                 source
             } => Delete::new(table_name, Self::build(*source)),
+            
+            Node::Order { 
+                source, 
+                order_by 
+            } => Order::new(Self::build(*source), order_by),
         }
     }
 }

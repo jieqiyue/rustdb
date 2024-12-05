@@ -1,6 +1,6 @@
-use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use crate::sql::parser::ast::{Consts, Expression};
+use std::{cmp::Ordering, fmt::Display};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum DataType {
@@ -52,4 +52,22 @@ impl Display for Value {
         }
     }
 }
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Null, Value::Null) => Some(Ordering::Equal),
+            (Value::Null, _) => Some(Ordering::Less),
+            (_, Value::Null) => Some(Ordering::Greater),
+            (Value::Boolean(a), Value::Boolean(b)) => a.partial_cmp(b),
+            (Value::Integer(a), Value::Integer(b)) => a.partial_cmp(b),
+            (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b),
+            (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
+            (_, _) => None,
+        }
+    }
+}
+
 pub type Row = Vec<Value>;

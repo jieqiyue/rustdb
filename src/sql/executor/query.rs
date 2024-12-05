@@ -1,10 +1,14 @@
+use std::{cmp::Ordering, collections::HashMap};
+
 use crate::{
-    error::Result,
-    sql::{engine::Transaction, parser::ast::Expression},
+    error::{Error, Result},
+    sql::{
+        engine::Transaction,
+        parser::ast::{Expression, OrderDirection},
+    },
 };
 
 use super::{Executor, ResultSet};
-
 pub struct Scan {
     table_name: String,
     filter: Option<(String, Expression)>,
@@ -26,3 +30,94 @@ impl<T: Transaction> Executor<T> for Scan {
         })
     }
 }
+pub struct Order<T: Transaction> {
+    source: Box<dyn Executor<T>>,
+    order_by: Vec<(String, OrderDirection)>,
+}
+
+impl<T: Transaction> Order<T> {
+    pub fn new(source: Box<dyn Executor<T>>, order_by: Vec<(String, OrderDirection)>) -> Box<Self> {
+        Box::new(Self { source, order_by })
+    }
+}
+
+impl<T: Transaction> Executor<T> for Order<T> {
+    fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
+        match self.source.execute(txn)? {
+            ResultSet::Scan { columns, mut rows } => {
+                // 找到 order by 的列对应表中的列的位置
+                let mut order_col_index = HashMap::new();
+                
+                for (i, (col_name, _)) in self.order_by.iter().enumerate() {
+                    match columns.iter().position(|c| *c == *col_name) {
+                        Some(pos) => order_col_index.insert(i, pos),
+                        None => {
+                            return Err(Error::Internal(format!(
+                                "order by column {} is not in table",
+                                col_name
+                            )))
+                        }
+                    };
+                }
+
+                rows.sort_by(|col1, col2| {
+                    for (i, (_, direction)) in self.order_by.iter().enumerate() {
+                        let col_index = order_col_index.get(&i).unwrap();
+                        let x = &col1[*col_index];
+                        let y = &col2[*col_index];
+                        match x.partial_cmp(y) {
+                            Some(Ordering::Equal) => {}
+                            Some(o) => {
+                                return if *direction == OrderDirection::Asc {
+                                    o
+                                } else {
+                                    o.reverse()
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    Ordering::Equal
+                });
+
+                Ok(ResultSet::Scan { columns, rows })
+            }
+            _ => return Err(Error::Internal("Unexpected result set".into())),
+        }
+    }
+}
+
+// #[derive(PartialEq)]
+// enum OrderBy {
+//     ASC,
+//     DESC,
+// }
+
+// let mut rows = vec![
+//     vec![1, 9, 11],
+//     vec![1, 3, 23],
+//     vec![4, 5, 41],
+//     vec![1, 2, 43],
+//     vec![2, 5, 25],
+// ];
+// let columns = vec![
+//     OrderBy::ASC, OrderBy::DESC
+// ];
+
+// rows.sort_by(|row1, row2| {
+//     for (i, ord) in columns.iter().enumerate() {
+//         let a = row1[i];
+//         let b = row2[i];
+//         match a.partial_cmp(&b) {
+//             Some(Ordering::Equal) => {},
+//             Some(o) => return if *ord == OrderBy::ASC {o} else {o.reverse()},
+//             None => {},
+//         }
+//     }
+
+//     Ordering::Equal
+// });
+
+// for r in rows {
+//     println!("{:?}", r);
+// }
