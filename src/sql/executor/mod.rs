@@ -13,7 +13,7 @@ mod mutation;
 mod query;
 
 // 执行结果集，不同的节点执行结果是不同的
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ResultSet{
     CreateTable {
         table_name: String,

@@ -9,6 +9,7 @@ pub struct Table {
     pub name: String,
     pub columns: Vec<Column>
 }
+
 impl Table {
     // 校验表的有效性
     pub fn validate(&self) -> Result<()> {
@@ -34,6 +35,31 @@ impl Table {
                     "Multiple primary keys for table {}",
                     self.name
                 )))
+            }
+        }
+
+        // 校验列信息
+        for col in &self.columns {
+            // 主键不能为空
+            if col.primary_key && col.nullable {
+                return Err(Error::Internal(format!(
+                    "Primary key {} cannot be nullable in table{}",
+                    col.name, self.name
+                )));
+            }
+            // 校验默认值是否和列类型匹配
+            if let Some(default_val) = &col.default {
+                match default_val.datatype() {
+                    Some(dt) => {
+                        if dt != col.datatype {
+                            return Err(Error::Internal(format!(
+                                "Default value for column {} mismatch in table{}",
+                                col.name, self.name
+                            )));
+                        }
+                    }
+                    None => {}
+                }
             }
         }
 

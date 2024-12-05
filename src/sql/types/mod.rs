@@ -10,6 +10,7 @@ pub enum DataType {
     String,
 }
 
+// 代表这一列的具体的值是什么
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
