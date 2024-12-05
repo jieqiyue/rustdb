@@ -122,7 +122,12 @@ impl<E: StorageEngine> Transaction for KVTransaction<E> {
 
         Ok(())
     }
-
+    
+    fn delete_row(&mut self, table: &Table, id: &Value) -> Result<()> {
+        let key = Key::Row(table.name.clone(), id.clone()).encode()?;
+        self.txn.delete(key)
+    }
+    
     // 1. 调用mvcc Transaction获取到整个表的数据，然后进行过滤返回
     fn scan_table(
         &self,

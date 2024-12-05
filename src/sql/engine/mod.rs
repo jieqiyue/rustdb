@@ -38,6 +38,9 @@ pub trait Transaction {
     // 更新行，row是这行新的值，id是这一行的原来的主键的值
     fn update_row(&mut self, table: &Table, id: &Value, row: Row) -> Result<()>;
     
+    // 删除行
+    fn delete_row(&mut self, table: &Table, id: &Value) -> Result<()>;
+    
     // 扫描表
     fn scan_table(
         &self,

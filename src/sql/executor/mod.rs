@@ -6,6 +6,8 @@ use crate::sql::engine::Transaction;
 use crate::sql::executor::query::Scan;
 use crate::sql::executor::schema::CreateTable;
 use mutation::{Insert, Update};
+use crate::sql::executor::mutation::Delete;
+
 mod schema;
 mod mutation;
 mod query;
@@ -31,6 +33,9 @@ pub enum ResultSet{
         count: usize,
     },
     
+    Delete {
+        count: usize,
+    },
 }
 
 // 通用的执行器的定义trait，有不同的执行器来实现这个trait
@@ -48,17 +53,24 @@ impl<T: Transaction + 'static> dyn Executor<T> {
     pub fn build(node: Node) -> Box<dyn Executor<T>> {
         match node {
             Node::CreateTable { schema } => CreateTable::new(schema),
+            
             Node::Insert {
                 table_name,
                 columns,
                 values,
             } => Insert::new(table_name, columns, values),
             Node::Scan { table_name, filter } => Scan::new(table_name, filter),
+            
             Node::Update {
                 table_name,
                 source,
                 columns,
             } => Update::new(table_name, Self::build(*source), columns),
+            
+            Node::Delete {
+                table_name, 
+                source
+            } => Delete::new(table_name, Self::build(*source)),
         }
     }
 }

@@ -40,7 +40,13 @@ pub enum Node{
         source: Box<Node>,
         columns: BTreeMap<String, Expression>,
     },
-    
+    // 删除节点
+    Delete {
+        table_name: String,
+        // 对于这种删除和更新节点来说，都需要一个过滤条件来找到所有需要更新的节点，所以这里引入一个Node来递归的调用Scan节点
+        // 来得到需要更新的节点
+        source: Box<Node>,
+    },
 }
 
 // 执行计划定义，底层是不同类型的执行节点
