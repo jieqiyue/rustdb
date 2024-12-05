@@ -260,4 +260,31 @@ mod tests {
 
         Ok(())
     }
+
+
+    #[test]
+    fn test_delete() -> Result<()> {
+        let kvengine = KVEngine::new(MemoryEngine::new());
+        let mut s = kvengine.session()?;
+
+        s.execute(
+            "create table t1 (a int primary key, b text default 'vv', c integer default 100);",
+        )?;
+        s.execute("insert into t1 values(1, 'a', 1);")?;
+        s.execute("insert into t1 values(2, 'b', 2);")?;
+        s.execute("insert into t1 values(3, 'c', 3);")?;
+
+        s.execute("delete from t1 where a = 3;")?;
+        s.execute("delete from t1 where a = 2;")?;
+
+        match s.execute("select * from t1;")? {
+            crate::sql::executor::ResultSet::Scan { columns, rows } => {
+                for row in rows {
+                    println!("{:?}", row);
+                }
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
 }
