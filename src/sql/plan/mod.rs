@@ -76,6 +76,12 @@ pub enum Node{
         source: Box<Node>,
         exprs: Vec<(Expression, Option<String>)>,
     },
+
+    // 嵌套循环 Join 节点
+    NestedLoopJoin {
+        left: Box<Node>,
+        right: Box<Node>,
+    },
 }
 
 // 执行计划定义，底层是不同类型的执行节点

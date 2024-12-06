@@ -3,10 +3,12 @@ use crate::error::Result;
 use mutation::{Delete, Insert, Update};
 use query::{Order, Scan, Offset, Limit, Projection};
 use schema::CreateTable;
+use join::NestedLoopJoin;
 
 mod mutation;
 mod query;
 mod schema;
+mod join;
 
 // 执行结果集，不同的节点执行结果是不同的
 #[derive(Debug, PartialEq)]
@@ -79,6 +81,10 @@ impl<T: Transaction + 'static> dyn Executor<T> {
             Node::Offset { source, offset }  => Offset::new(Self::build(*source), offset),
 
             Node::Projection { source, exprs } => Projection::new(Self::build(*source), exprs),
+            
+            Node::NestedLoopJoin { left, right } => {
+                NestedLoopJoin::new(Self::build(*left), Self::build(*right))
+            }
         }
     }
 }

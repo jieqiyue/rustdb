@@ -70,32 +70,67 @@ impl<'a> Parser<'a> {
 
     // 解析 Select 语句
     fn parse_select(&mut self) -> Result<ast::Statement> {
-        // 解析 select 的列信息
-        let select = self.parse_select_clause()?;
-        self.next_expect(Token::Keyword(Keyword::From))?;
-        
-        // 解析表名
-        let table_name = self.next_ident()?;
         Ok(ast::Statement::Select {
-            select,
-            table_name,
+            select: self.parse_select_clause()?,
+            from: self.parse_from_clause()?,
             order_by: self.parse_order_clause()?,
-            // 如果在select语句最后还有limit和offset关键字
             limit: {
-               if self.next_if_token(Token::Keyword(Limit)).is_some(){
-                   Some(self.parse_expression()?)
-               }else{
-                   None
-               }
-            },
-            offset:{
-                if self.next_if_token(Token::Keyword(Offset)).is_some(){
+                if self.next_if_token(Token::Keyword(Keyword::Limit)).is_some() {
                     Some(self.parse_expression()?)
-                }else{
+                } else {
                     None
                 }
-            }
+            },
+            offset: {
+                if self
+                    .next_if_token(Token::Keyword(Keyword::Offset))
+                    .is_some()
+                {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                }
+            },
         })
+    }
+    
+    fn parse_from_clause(&mut self) -> Result<ast::FromItem> {
+        // From 关键字
+        self.next_expect(Token::Keyword(Keyword::From))?;
+
+        // 第一个表名
+        let mut item = self.parse_from_table_clause()?;
+        // 是否有 Join，这里使用了while循环去解析，在ast::FromItem::Join中有Box类型的Box<FromItem>，所以是一个
+        // 递归的结构。
+        // 比如说：select * from tb1 cross join tb2 cross join tb3 
+        // 
+        while let Some(join_type) = self.parse_from_clause_join()? {
+            // 注意这里得用Box::new去包裹
+            let left = Box::new(item);
+            let right = Box::new(self.parse_from_table_clause()?);
+            item = ast::FromItem::Join {
+                left,
+                right,
+                join_type,
+            }
+        }
+
+        Ok(item)
+    }
+
+    fn parse_from_table_clause(&mut self) -> Result<ast::FromItem> {
+        Ok(ast::FromItem::Table {
+            name: self.next_ident()?,
+        })
+    }
+
+    fn parse_from_clause_join(&mut self) -> Result<Option<ast::JoinType>> {
+        // 是否是 Cross Join
+        if self.next_if_token(Token::Keyword(Keyword::Cross)).is_some() {
+            self.next_expect(Token::Keyword(Keyword::Join))?;
+            return Ok(Some(ast::JoinType::Cross));
+        }
+        Ok(None)
     }
     
     fn parse_select_clause(&mut self) -> Result<Vec<(Expression, Option<String>)>> {
@@ -494,7 +529,9 @@ mod tests{
             stmt,
             ast::Statement::Select {
                 select: vec![],
-                table_name: "tbl1".to_string(),
+                from: ast::FromItem::Table {
+                    name: "tbl1".into()
+                },
                 order_by: vec![],
                 limit: Some(Expression::Consts(Consts::Integer(10))),
                 offset: Some(Expression::Consts(Consts::Integer(20))),
@@ -507,7 +544,9 @@ mod tests{
             stmt,
             ast::Statement::Select {
                 select: vec![],
-                table_name: "tbl1".to_string(),
+                from: ast::FromItem::Table {
+                    name: "tbl1".into()
+                },
                 order_by: vec![
                     ("a".to_string(), OrderDirection::Asc),
                     ("b".to_string(), OrderDirection::Asc),
@@ -528,12 +567,41 @@ mod tests{
                     (Expression::Field("b".into()), Some("col2".into())),
                     (Expression::Field("c".into()), None),
                 ],
-                table_name: "tbl1".to_string(),
+                from: ast::FromItem::Table {
+                    name: "tbl1".into()
+                },
                 order_by: vec![
                     ("a".to_string(), OrderDirection::Asc),
                     ("b".to_string(), OrderDirection::Asc),
                     ("c".to_string(), OrderDirection::Desc),
                 ],
+                limit: None,
+                offset: None,
+            }
+        );
+
+        let sql = "select * from tbl1 cross join tbl2 cross join tbl3;";
+        let stmt = Parser::new(sql).parse()?;
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                select: vec![],
+                from: ast::FromItem::Join {
+                    left: Box::new(ast::FromItem::Join {
+                        left: Box::new(ast::FromItem::Table {
+                            name: "tbl1".into()
+                        }),
+                        right: Box::new(ast::FromItem::Table {
+                            name: "tbl2".into()
+                        }),
+                        join_type: ast::JoinType::Cross
+                    }),
+                    right: Box::new(ast::FromItem::Table {
+                        name: "tbl3".into()
+                    }),
+                    join_type: ast::JoinType::Cross
+                },
+                order_by: vec![],
                 limit: None,
                 offset: None,
             }

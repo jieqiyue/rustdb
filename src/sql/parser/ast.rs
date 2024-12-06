@@ -14,7 +14,7 @@ pub enum Statement {
     // 由于目前仅仅实现的是select * from xxxx表，这种类型的语句，所以这里仅仅存储一下表名就可以了。
     Select {
         select: Vec<(Expression, Option<String>)>,
-        table_name:String,
+        from: FromItem,
         order_by: Vec<(String, OrderDirection)>,
         limit: Option<Expression>,
         offset: Option<Expression>,
@@ -29,6 +29,27 @@ pub enum Statement {
         table_name: String,
         where_clause: Option<(String, Expression)>,
     },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum FromItem {
+    Table {
+        name: String,
+    },
+
+    Join {
+        left: Box<FromItem>,
+        right: Box<FromItem>,
+        join_type: JoinType,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum JoinType {
+    Cross,
+    Inner,
+    Left,
+    Right,
 }
 
 #[derive(Debug, PartialEq)]

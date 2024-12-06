@@ -61,15 +61,13 @@ impl Planner {
             },
             ast::Statement::Select {
                 select,
-                table_name,
+                from,
                 order_by,
                 limit,
                 offset,
             } => {
-                let mut node = Node::Scan {
-                    table_name,
-                    filter: None,
-                };
+                // 作为最底层的节点，优先将数据给查询出来
+                let mut node = self.build_from_item(from)?;
 
                 // order by
                 if !order_by.is_empty() {
@@ -136,6 +134,26 @@ impl Planner {
                     table_name,
                     filter: where_clause,
                 }),
+            },
+        })
+    }
+
+    fn build_from_item(&self, item: ast::FromItem) -> Result<Node> {
+        Ok(match item {
+            ast::FromItem::Table { name } => Node::Scan {
+                table_name: name,
+                filter: None,
+            },
+            ast::FromItem::Join {
+                left,
+                right,
+                join_type,
+            } => match join_type {
+                ast::JoinType::Cross => Node::NestedLoopJoin {
+                    left: Box::new(self.build_from_item(*left)?),
+                    right: Box::new(self.build_from_item(*right)?),
+                },
+                _ => todo!(),
             },
         })
     }
