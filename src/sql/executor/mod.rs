@@ -1,7 +1,7 @@
 use super::{engine::Transaction, plan::Node, types::Row};
 use crate::error::Result;
 use mutation::{Delete, Insert, Update};
-use query::{Order, Scan, Offset, Limit};
+use query::{Order, Scan, Offset, Limit, Projection};
 use schema::CreateTable;
 
 mod mutation;
@@ -40,6 +40,7 @@ pub trait Executor<T:Transaction> {
     // 这些不同的执行器有不同的逻辑，比如说Create Table就需要先判断当前数据库中是否已经有这个表了，如果没有再去创建这个表。
     // 那么这个逻辑就是在执行器里面做的，对于底层的存储引擎，就是提供一些基础的扫描，创建行等的接口，具体的逻辑还是要在
     // 执行器层来做的。
+    // 不同的执行器，都会返回这个ResultSet
     fn execute(self:Box<Self>, txn:&mut T) -> Result<ResultSet>;
 }
 
@@ -76,6 +77,8 @@ impl<T: Transaction + 'static> dyn Executor<T> {
             Node::Limit { source, limit}  => Limit::new(Self::build(*source), limit),
 
             Node::Offset { source, offset }  => Offset::new(Self::build(*source), offset),
+
+            Node::Projection { source, exprs } => Projection::new(Self::build(*source), exprs),
         }
     }
 }

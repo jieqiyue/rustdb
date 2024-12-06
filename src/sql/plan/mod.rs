@@ -70,6 +70,12 @@ pub enum Node{
         // 来得到需要更新的节点
         source: Box<Node>,
     },
+    
+    // 投影节点
+    Projection {
+        source: Box<Node>,
+        exprs: Vec<(Expression, Option<String>)>,
+    },
 }
 
 // 执行计划定义，底层是不同类型的执行节点

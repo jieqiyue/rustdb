@@ -544,8 +544,13 @@ mod tests {
         s.execute("insert into t3 values (5, 87, 14, 3.28);")?;
         s.execute("insert into t3 values (7, 87, 82, 9.52);")?;
 
-        match s.execute("select * from t3 order by a desc limit 2 offset 1;")? {
+        match s.execute("select a, b as col2 from t3 order by c, a desc limit 100;")? {
             ResultSet::Scan { columns, rows } => {
+                for col in columns {
+                    print!("{} ", col);
+                }
+                println!();
+                println!("-----------");
                 for r in rows {
                     println!("{:?}", r);
                 }
