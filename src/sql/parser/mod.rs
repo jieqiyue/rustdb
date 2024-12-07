@@ -1,11 +1,12 @@
-use crate::error::{Error, Result};
-use lexer::{Keyword, Lexer, Token};
-use crate::sql::parser::ast::Statement;
-use super::types::DataType;
 use std::{collections::BTreeMap, iter::Peekable};
 
-use ast::{Column, Expression, OrderDirection};
-use crate::sql::parser::lexer::Keyword::{Limit, Offset};
+use ast::{Column, Expression, Operation, OrderDirection};
+use lexer::{Keyword, Lexer, Token};
+
+use crate::error::{Error, Result};
+
+use super::types::DataType;
+
 
 pub mod ast;
 mod lexer;
@@ -103,15 +104,36 @@ impl<'a> Parser<'a> {
         // 是否有 Join，这里使用了while循环去解析，在ast::FromItem::Join中有Box类型的Box<FromItem>，所以是一个
         // 递归的结构。
         // 比如说：select * from tb1 cross join tb2 cross join tb3 
-        // 
+        // select * from tb1 join tb2 on tb1.a = tb2.a
         while let Some(join_type) = self.parse_from_clause_join()? {
             // 注意这里得用Box::new去包裹
             let left = Box::new(item);
             let right = Box::new(self.parse_from_table_clause()?);
+
+            // 解析 Join 条件
+            let predicate = match join_type {
+                ast::JoinType::Cross => None,
+                _ => {
+                    self.next_expect(Token::Keyword(Keyword::On))?;
+                    let l = self.parse_expression()?;
+                    self.next_expect(Token::Equal)?;
+                    let r = self.parse_expression()?;
+
+                    let (l, r) = match join_type {
+                        ast::JoinType::Right => (r, l),
+                        _ => (l, r),
+                    };
+
+                    let cond = Operation::Equal(Box::new(l), Box::new(r));
+                    Some(ast::Expression::Operation(cond))
+                }
+            };
+            
             item = ast::FromItem::Join {
                 left,
                 right,
                 join_type,
+                predicate,
             }
         }
 
@@ -128,9 +150,18 @@ impl<'a> Parser<'a> {
         // 是否是 Cross Join
         if self.next_if_token(Token::Keyword(Keyword::Cross)).is_some() {
             self.next_expect(Token::Keyword(Keyword::Join))?;
-            return Ok(Some(ast::JoinType::Cross));
+            Ok(Some(ast::JoinType::Cross)) // Cross Join
+        } else if self.next_if_token(Token::Keyword(Keyword::Join)).is_some() {
+            Ok(Some(ast::JoinType::Inner)) // Inner Join
+        } else if self.next_if_token(Token::Keyword(Keyword::Left)).is_some() {
+            self.next_expect(Token::Keyword(Keyword::Join))?;
+            Ok(Some(ast::JoinType::Left)) // Left Join
+        } else if self.next_if_token(Token::Keyword(Keyword::Right)).is_some() {
+            self.next_expect(Token::Keyword(Keyword::Join))?;
+            Ok(Some(ast::JoinType::Right)) // Right Join
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
     
     fn parse_select_clause(&mut self) -> Result<Vec<(Expression, Option<String>)>> {
@@ -594,12 +625,14 @@ mod tests{
                         right: Box::new(ast::FromItem::Table {
                             name: "tbl2".into()
                         }),
-                        join_type: ast::JoinType::Cross
+                        join_type: ast::JoinType::Cross,
+                        predicate: None,
                     }),
                     right: Box::new(ast::FromItem::Table {
                         name: "tbl3".into()
                     }),
-                    join_type: ast::JoinType::Cross
+                    join_type: ast::JoinType::Cross,
+                    predicate: None,
                 },
                 order_by: vec![],
                 limit: None,

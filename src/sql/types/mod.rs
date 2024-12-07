@@ -19,6 +19,7 @@ pub enum Value {
     Float(f64),
     String(String),
 }
+
 impl Value {
     pub fn from_expression(expr: Expression) -> Self {
         match expr {

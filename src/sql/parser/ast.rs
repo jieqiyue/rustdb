@@ -4,7 +4,11 @@ use std::collections::BTreeMap;
 // Abstract Syntax Tree 抽象语法树定义
 #[derive(Debug, PartialEq)]
 pub enum Statement {
-    CreateTable { name: String, columns: Vec<Column> },
+    CreateTable { 
+        name: String, 
+        columns: Vec<Column> 
+    },
+    
     Insert {
         table_name: String,
         columns: Option<Vec<String>>,
@@ -25,6 +29,7 @@ pub enum Statement {
         columns: BTreeMap<String, Expression>,
         where_clause: Option<(String, Expression)>,
     },
+    
     Delete {
         table_name: String,
         where_clause: Option<(String, Expression)>,
@@ -41,6 +46,7 @@ pub enum FromItem {
         left: Box<FromItem>,
         right: Box<FromItem>,
         join_type: JoinType,
+        predicate: Option<Expression>,
     },
 }
 
@@ -72,6 +78,7 @@ pub struct Column {
 pub enum Expression {
     Field(String),
     Consts(Consts),
+    Operation(Operation),
 }
 
 impl From<Consts> for Expression {
@@ -87,4 +94,12 @@ pub enum Consts {
     Integer(i64),
     Float(f64),
     String(String),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Operation {
+    // 这两个Box里面存放的Expression是Expression::Field类型的
+    // 比如说：select * from t1 right join t2 on a = b join t3 on a = c;
+    // 这里就会解析到a = b，a和b是两个列，这两个列解析为一个Expression::Field类型。
+    Equal(Box<Expression>, Box<Expression>),
 }

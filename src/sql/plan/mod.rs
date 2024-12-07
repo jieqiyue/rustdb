@@ -81,6 +81,9 @@ pub enum Node{
     NestedLoopJoin {
         left: Box<Node>,
         right: Box<Node>,
+        predicate: Option<Expression>,
+        // 如果是left join或者是right join就设置为true。
+        outer: bool,
     },
 }
 
