@@ -4,11 +4,13 @@ use mutation::{Delete, Insert, Update};
 use query::{Order, Scan, Offset, Limit, Projection};
 use schema::CreateTable;
 use join::NestedLoopJoin;
+use agg::Aggregate;
 
 mod mutation;
 mod query;
 mod schema;
 mod join;
+mod agg;
 
 // 执行结果集，不同的节点执行结果是不同的
 #[derive(Debug, PartialEq)]
@@ -88,6 +90,8 @@ impl<T: Transaction + 'static> dyn Executor<T> {
                 predicate,
                 outer,
             } => NestedLoopJoin::new(Self::build(*left), Self::build(*right), predicate, outer),
+            
+            Node::Aggregate { source, exprs } => Aggregate::new(Self::build(*source), exprs),
         }
     }
 }

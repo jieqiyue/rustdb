@@ -79,6 +79,7 @@ pub enum Expression {
     Field(String),
     Consts(Consts),
     Operation(Operation),
+    Function(String, String),
 }
 
 impl From<Consts> for Expression {

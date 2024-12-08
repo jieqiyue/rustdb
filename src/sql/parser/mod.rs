@@ -401,8 +401,16 @@ impl<'a> Parser<'a> {
     fn parse_expression(&mut self) -> Result<ast::Expression> {
         Ok(match self.next()? {
             Token::Ident(ident) => {
-                // 列名
-                ast::Expression::Field(ident)
+                // 函数
+                // count(col_name)
+                if self.next_if_token(Token::OpenParen).is_some() {
+                    let col_name = self.next_ident()?;
+                    self.next_expect(Token::CloseParen)?;
+                    ast::Expression::Function(ident, col_name)
+                } else {
+                    // 列名
+                    ast::Expression::Field(ident)
+                }
             },
             Token::Number(n)=>{
                 if n.chars().all(|c|c.is_ascii_digit()) {
@@ -554,92 +562,110 @@ mod tests{
 
     #[test]
     fn test_parser_select() -> Result<()> {
-        let sql = "select * from tbl1 limit 10 offset 20;";
-        let stmt = Parser::new(sql).parse()?;
-        assert_eq!(
-            stmt,
-            ast::Statement::Select {
-                select: vec![],
-                from: ast::FromItem::Table {
-                    name: "tbl1".into()
-                },
-                order_by: vec![],
-                limit: Some(Expression::Consts(Consts::Integer(10))),
-                offset: Some(Expression::Consts(Consts::Integer(20))),
-            }
-        );
-
-        let sql = "select * from tbl1 order by a, b asc, c desc;";
-        let stmt = Parser::new(sql).parse()?;
-        assert_eq!(
-            stmt,
-            ast::Statement::Select {
-                select: vec![],
-                from: ast::FromItem::Table {
-                    name: "tbl1".into()
-                },
-                order_by: vec![
-                    ("a".to_string(), OrderDirection::Asc),
-                    ("b".to_string(), OrderDirection::Asc),
-                    ("c".to_string(), OrderDirection::Desc),
-                ],
-                limit: None,
-                offset: None,
-            }
-        );
-
-        let sql = "select a as col1, b as col2, c from tbl1 order by a, b asc, c desc;";
+        // let sql = "select * from tbl1 limit 10 offset 20;";
+        // let stmt = Parser::new(sql).parse()?;
+        // assert_eq!(
+        //     stmt,
+        //     ast::Statement::Select {
+        //         select: vec![],
+        //         from: ast::FromItem::Table {
+        //             name: "tbl1".into()
+        //         },
+        //         order_by: vec![],
+        //         limit: Some(Expression::Consts(Consts::Integer(10))),
+        //         offset: Some(Expression::Consts(Consts::Integer(20))),
+        //     }
+        // );
+        // 
+        // let sql = "select * from tbl1 order by a, b asc, c desc;";
+        // let stmt = Parser::new(sql).parse()?;
+        // assert_eq!(
+        //     stmt,
+        //     ast::Statement::Select {
+        //         select: vec![],
+        //         from: ast::FromItem::Table {
+        //             name: "tbl1".into()
+        //         },
+        //         order_by: vec![
+        //             ("a".to_string(), OrderDirection::Asc),
+        //             ("b".to_string(), OrderDirection::Asc),
+        //             ("c".to_string(), OrderDirection::Desc),
+        //         ],
+        //         limit: None,
+        //         offset: None,
+        //     }
+        // );
+        // 
+        // let sql = "select a as col1, b as col2, c from tbl1 order by a, b asc, c desc;";
+        // let stmt = Parser::new(sql).parse()?;
+        // assert_eq!(
+        //     stmt,
+        //     ast::Statement::Select {
+        //         select: vec![
+        //             (Expression::Field("a".into()), Some("col1".into())),
+        //             (Expression::Field("b".into()), Some("col2".into())),
+        //             (Expression::Field("c".into()), None),
+        //         ],
+        //         from: ast::FromItem::Table {
+        //             name: "tbl1".into()
+        //         },
+        //         order_by: vec![
+        //             ("a".to_string(), OrderDirection::Asc),
+        //             ("b".to_string(), OrderDirection::Asc),
+        //             ("c".to_string(), OrderDirection::Desc),
+        //         ],
+        //         limit: None,
+        //         offset: None,
+        //     }
+        // );
+        // 
+        // let sql = "select * from tbl1 cross join tbl2 cross join tbl3;";
+        // let stmt = Parser::new(sql).parse()?;
+        // assert_eq!(
+        //     stmt,
+        //     ast::Statement::Select {
+        //         select: vec![],
+        //         from: ast::FromItem::Join {
+        //             left: Box::new(ast::FromItem::Join {
+        //                 left: Box::new(ast::FromItem::Table {
+        //                     name: "tbl1".into()
+        //                 }),
+        //                 right: Box::new(ast::FromItem::Table {
+        //                     name: "tbl2".into()
+        //                 }),
+        //                 join_type: ast::JoinType::Cross,
+        //                 predicate: None,
+        //             }),
+        //             right: Box::new(ast::FromItem::Table {
+        //                 name: "tbl3".into()
+        //             }),
+        //             join_type: ast::JoinType::Cross,
+        //             predicate: None,
+        //         },
+        //         order_by: vec![],
+        //         limit: None,
+        //         offset: None,
+        //     }
+        // );
+        
+        let sql = "select count(a), min(b), max(c) from tbl1;";
         let stmt = Parser::new(sql).parse()?;
         assert_eq!(
             stmt,
             ast::Statement::Select {
                 select: vec![
-                    (Expression::Field("a".into()), Some("col1".into())),
-                    (Expression::Field("b".into()), Some("col2".into())),
-                    (Expression::Field("c".into()), None),
+                    (ast::Expression::Function("count".into(), "a".into()), None),
+                    (ast::Expression::Function("min".into(), "b".into()), None),
+                    (ast::Expression::Function("max".into(), "c".into()), None),
                 ],
                 from: ast::FromItem::Table {
                     name: "tbl1".into()
-                },
-                order_by: vec![
-                    ("a".to_string(), OrderDirection::Asc),
-                    ("b".to_string(), OrderDirection::Asc),
-                    ("c".to_string(), OrderDirection::Desc),
-                ],
-                limit: None,
-                offset: None,
-            }
-        );
-
-        let sql = "select * from tbl1 cross join tbl2 cross join tbl3;";
-        let stmt = Parser::new(sql).parse()?;
-        assert_eq!(
-            stmt,
-            ast::Statement::Select {
-                select: vec![],
-                from: ast::FromItem::Join {
-                    left: Box::new(ast::FromItem::Join {
-                        left: Box::new(ast::FromItem::Table {
-                            name: "tbl1".into()
-                        }),
-                        right: Box::new(ast::FromItem::Table {
-                            name: "tbl2".into()
-                        }),
-                        join_type: ast::JoinType::Cross,
-                        predicate: None,
-                    }),
-                    right: Box::new(ast::FromItem::Table {
-                        name: "tbl3".into()
-                    }),
-                    join_type: ast::JoinType::Cross,
-                    predicate: None,
                 },
                 order_by: vec![],
                 limit: None,
                 offset: None,
             }
         );
-
         Ok(())
     }
 

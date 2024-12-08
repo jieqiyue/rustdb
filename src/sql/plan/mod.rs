@@ -85,6 +85,12 @@ pub enum Node{
         // 如果是left join或者是right join就设置为true。
         outer: bool,
     },
+
+    // Agg 聚集节点
+    Aggregate {
+        source: Box<Node>,
+        exprs: Vec<(Expression, Option<String>)>,
+    },
 }
 
 // 执行计划定义，底层是不同类型的执行节点

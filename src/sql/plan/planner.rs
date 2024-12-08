@@ -68,6 +68,24 @@ impl Planner {
             } => {
                 // 作为最底层的节点，优先将数据给查询出来
                 let mut node = self.build_from_item(from)?;
+                
+                let mut has_agg = false;
+                // aggregate
+                if !select.is_empty() {
+                    for (expr, _) in select.iter() {
+                        // 如果是 Function，说明是 agg
+                        if let ast::Expression::Function(_, _) = expr {
+                            has_agg = true;
+                            break;
+                        }
+                    }
+                    if has_agg {
+                        node = Node::Aggregate {
+                            source: Box::new(node),
+                            exprs: select.clone(),
+                        }
+                    }
+                }
 
                 // order by
                 if !order_by.is_empty() {
@@ -104,7 +122,7 @@ impl Planner {
                 }
                 
                 // projection
-                if !select.is_empty() {
+                if !select.is_empty() && !has_agg{
                     node = Node::Projection {
                         source: Box::new(node),
                         exprs: select,
